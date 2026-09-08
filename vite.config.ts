@@ -60,9 +60,13 @@ export default defineConfig({
     sourcemap: true,
     rollupOptions: {
       output: {
-        manualChunks: {
-          mapbox: ['mapbox-gl'],
-          supabase: ['@supabase/supabase-js'],
+        // Rolldown (Vite 8) only accepts the function form. Mapbox and Supabase
+        // are large and change far less often than app code, so splitting them
+        // out keeps them cached across deploys.
+        manualChunks(id: string) {
+          if (id.includes('node_modules/mapbox-gl')) return 'mapbox';
+          if (id.includes('node_modules/@supabase')) return 'supabase';
+          return null;
         },
       },
     },

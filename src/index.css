@@ -1,0 +1,148 @@
+@import 'tailwindcss';
+
+/* Mapbox ships its own stylesheet; bundling it keeps the app offline-capable. */
+@import 'mapbox-gl/dist/mapbox-gl.css';
+
+/**
+ * Design tokens.
+ *
+ * The palette is built for a windscreen: near-black ground so the map carries
+ * the colour, one saturated accent for "what happens next", and amber/red
+ * reserved exclusively for range warnings so they cannot be confused with
+ * ordinary UI.
+ */
+@theme {
+  --color-ink-950: #05080f;
+  --color-ink-900: #0b1120;
+  --color-ink-850: #111a2e;
+  --color-ink-800: #16203a;
+  --color-ink-700: #1f2c4d;
+  --color-ink-600: #2c3c66;
+  --color-ink-500: #4a5b86;
+  --color-ink-400: #7688ad;
+  --color-ink-300: #a3b2ce;
+  --color-ink-200: #cbd5e6;
+  --color-ink-100: #e6ecf6;
+
+  --color-route-500: #22d3ee;
+  --color-route-600: #0891b2;
+  --color-route-driven: #334666;
+
+  --color-go-500: #34d399;
+  --color-go-600: #059669;
+
+  --color-warn-500: #fbbf24;
+  --color-warn-600: #d97706;
+
+  --color-alert-500: #f87171;
+  --color-alert-600: #dc2626;
+
+  --color-charge-500: #a78bfa;
+  --color-charge-600: #7c3aed;
+
+  --font-sans: 'Inter var', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /* Tabular figures for anything that counts down, so the layout cannot jitter. */
+  --font-numeric: 'SF Mono', 'Roboto Mono', ui-monospace, monospace;
+
+  --radius-sheet: 1.5rem;
+
+  --shadow-panel: 0 18px 48px -12px rgb(0 0 0 / 0.7);
+  --shadow-banner: 0 10px 30px -8px rgb(0 0 0 / 0.6);
+}
+
+@layer base {
+  :root {
+    color-scheme: dark;
+    /* Safe-area insets, so the banner clears a notch and the bottom bar clears
+       the home indicator. */
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--color-ink-950);
+    color: var(--color-ink-100);
+    font-family: var(--font-sans);
+    /* A driver's thumb should never rubber-band the whole app. */
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Numbers that update continuously must not shift their neighbours. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid var(--color-route-500);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  /* Frosted panel used by every overlay above the map. */
+  .panel {
+    background-color: color-mix(in oklab, var(--color-ink-900) 88%, transparent);
+    backdrop-filter: blur(16px) saturate(140%);
+    border: 1px solid color-mix(in oklab, var(--color-ink-600) 60%, transparent);
+    box-shadow: var(--shadow-panel);
+  }
+
+  /* Minimum 44 px touch target: this is used while driving. */
+  .touch-target {
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+  }
+}
+
+/**
+ * Mapbox overrides. The app draws its own controls, so the built-in ones are
+ * hidden — but the attribution stays, because the Mapbox terms require it.
+ */
+.mapboxgl-ctrl-bottom-left,
+.mapboxgl-ctrl-top-right,
+.mapboxgl-ctrl-top-left {
+  display: none;
+}
+
+.mapboxgl-ctrl-bottom-right {
+  margin: 0 0.25rem 0.25rem 0;
+}
+
+.mapboxgl-ctrl-attrib {
+  background: color-mix(in oklab, var(--color-ink-950) 70%, transparent) !important;
+  border-radius: 0.375rem;
+  font-size: 0.625rem;
+}
+
+.mapboxgl-ctrl-attrib a {
+  color: var(--color-ink-400) !important;
+}
+
+.mapboxgl-canvas:focus {
+  outline: none;
+}

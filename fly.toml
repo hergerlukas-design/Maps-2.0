@@ -1,0 +1,50 @@
+# Fly.io-Konfiguration.
+#
+# Vor dem ersten Deploy:
+#   fly launch --no-deploy --copy-config
+#   fly secrets set TANKERKOENIG_API_KEY=… GOINGELECTRIC_API_KEY=… \
+#                   VAPID_PUBLIC_KEY=… VAPID_PRIVATE_KEY=… VAPID_SUBJECT=mailto:…
+#   fly deploy --build-arg VITE_MAPBOX_TOKEN=… \
+#              --build-arg VITE_SUPABASE_URL=… \
+#              --build-arg VITE_SUPABASE_ANON_KEY=…
+#
+# Die VITE_*-Werte müssen als --build-arg kommen, weil sie zur Build-Zeit in das
+# Browser-Bundle eingebacken werden. Alles andere gehört in `fly secrets`.
+
+app = "reichweite-nav"
+primary_region = "fra"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  HOST = "0.0.0.0"
+  NODE_ENV = "production"
+  CLIENT_DIR = "dist"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  # Eine Maschine bleibt wach: der TTL-Cache der Preisabfragen liegt im Prozess,
+  # ein Kaltstart würde ihn bei jeder Fahrt verwerfen.
+  min_machines_running = 1
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+[[http_service.checks]]
+  grace_period = "10s"
+  interval = "30s"
+  method = "GET"
+  timeout = "5s"
+  path = "/api/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
