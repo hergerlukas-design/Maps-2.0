@@ -99,7 +99,13 @@ export function RoutePlanner(props: RoutePlannerProps) {
 
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-4">
         {/* Route ------------------------------------------------------ */}
-        <section className="panel space-y-3 rounded-2xl p-4">
+        {/*
+          `relative z-20` is load-bearing: the panels below create their own
+          stacking contexts via `backdrop-filter`, so without it the geocoding
+          suggestions for the destination field paint *behind* the range panel
+          and cannot be clicked.
+        */}
+        <section className="panel relative z-20 space-y-3 rounded-2xl p-4">
           <PlaceInput
             label="Start"
             placeholder="Adresse oder Ort"

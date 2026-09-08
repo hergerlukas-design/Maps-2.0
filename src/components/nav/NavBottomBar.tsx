@@ -38,8 +38,15 @@ export function NavBottomBar({
   onEnd,
   onOpenSettings,
 }: NavBottomBarProps) {
+  // Only chosen stops count: the origin and the destination are the trip's ends,
+  // not something to announce as an upcoming intermediate stop.
   const nextStop = waypoints.find(
-    (waypoint) => waypoint.reachedAt == null && waypoint.kind !== 'destination',
+    (waypoint) =>
+      waypoint.reachedAt == null &&
+      (waypoint.kind === 'fuel' ||
+        waypoint.kind === 'charging' ||
+        waypoint.kind === 'rest_area' ||
+        waypoint.kind === 'toilets'),
   );
 
   return (

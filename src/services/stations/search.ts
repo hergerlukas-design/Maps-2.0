@@ -210,6 +210,17 @@ export function relateToRoute(
   };
 }
 
+/**
+ * German decimal notation, to match every other number in the UI. `toFixed`
+ * would emit `1.799` next to the `1,799 €` the price column shows.
+ */
+function formatEuro(value: number, digits: number): string {
+  return value.toLocaleString('de-DE', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+}
+
 /** Cheapest price for the requested grade, or `null` when not sold. */
 function priceOf(stop: FuelStop, fuel: FuelKind): number | null {
   const value = stop.prices[fuel];
@@ -243,8 +254,8 @@ function scoreStop(
       score: price + detourCost,
       note:
         detourCost >= 0.005
-          ? `${price.toFixed(3)} €/l + ${detourCost.toFixed(2)} € Umweg`
-          : `${price.toFixed(3)} €/l, praktisch kein Umweg`,
+          ? `${formatEuro(price, 3)} €/l + ${formatEuro(detourCost, 2)} € Umweg`
+          : `${formatEuro(price, 3)} €/l, praktisch kein Umweg`,
     };
   }
 

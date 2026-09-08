@@ -437,7 +437,11 @@ export function MapView({
       <div ref={containerRef} className="h-full w-full" />
       {error && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">
-          <p className="panel max-w-sm rounded-2xl p-4 text-sm text-ink-200">{error}</p>
+          {/* `break-words`: Mapbox errors quote the failing URL, which has no
+              spaces to wrap at and would otherwise overflow the panel. */}
+          <p className="panel max-w-sm rounded-2xl p-4 text-sm break-words text-ink-200">
+            {error}
+          </p>
         </div>
       )}
     </div>

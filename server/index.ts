@@ -69,7 +69,11 @@ if (existsSync(clientDir)) {
     }),
   );
   // SPA fallback: every non-API path renders the app shell.
-  app.get('/*splat', (_req, res) => {
+  //
+  // The braces matter. In Express 5 `/*splat` requires at least one path
+  // segment, so it matches `/einstellungen` but NOT `/` — the app's own home
+  // page would 404. `{*splat}` makes the wildcard optional and covers both.
+  app.get('/{*splat}', (_req, res) => {
     res.set('cache-control', 'no-cache').sendFile(path.join(clientDir, 'index.html'));
   });
 } else {
