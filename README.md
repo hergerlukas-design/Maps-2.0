@@ -72,9 +72,14 @@ Datenquellen* steht, was gerade fehlt.
 
 ```bash
 npm install
-cp .env.example .env      # und ausfüllen
+cp .env.example .env      # Schlüssel NUR in .env eintragen, nie in .env.example
 npm run dev               # Client auf :5173, API auf :8787
 ```
+
+`.env.example` ist eine Vorlage und liegt im Git — echte Schlüssel gehören
+ausschließlich in die daraus kopierte `.env`, die per `.gitignore` ausgeschlossen
+ist. Trägt man sie versehentlich in die Vorlage ein, blockiert GitHubs Push
+Protection den Push.
 
 `npm run dev` startet beides; Vite proxied `/api` an den Express-Server.
 
