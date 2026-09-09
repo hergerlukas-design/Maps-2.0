@@ -11,7 +11,7 @@ import type { Database } from './schema';
  * getter.
  */
 export const supabase: SupabaseClient<Database> | null = hasSupabase
-  ? createClient<Database>(env.supabaseUrl!, env.supabaseAnonKey!, {
+  ? createClient<Database>(env.supabaseUrl!, env.supabaseKey!, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
@@ -28,7 +28,7 @@ export const supabase: SupabaseClient<Database> | null = hasSupabase
 export function requireSupabase(): SupabaseClient<Database> {
   if (!supabase) {
     throw new Error(
-      'Supabase ist nicht konfiguriert (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY).',
+      'Supabase ist nicht konfiguriert (VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY).',
     );
   }
   return supabase;

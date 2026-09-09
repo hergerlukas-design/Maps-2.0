@@ -202,16 +202,19 @@ create index if not exists push_subscriptions_user_id_idx
 -- updated_at automatisch pflegen
 -- ---------------------------------------------------------------------------
 
+-- Benannte Dollar-Quotes ($fn$) statt $$: der Funktionsrumpf steht sonst im
+-- selben Quoting wie die do-$$-Blöcke weiter unten, was beim Ausführen über
+-- Werkzeuge, die die Datei als einen String weiterreichen, zerbricht.
 create or replace function public.touch_updated_at()
 returns trigger
 language plpgsql
 set search_path = ''
-as $$
+as $fn$
 begin
   new.updated_at = now();
   return new;
 end;
-$$;
+$fn$;
 
 do $$
 declare
@@ -238,7 +241,7 @@ returns trigger
 language plpgsql
 security definer
 set search_path = ''
-as $$
+as $fn$
 begin
   insert into public.profiles (id, display_name)
   values (new.id, new.raw_user_meta_data ->> 'display_name')
@@ -250,7 +253,7 @@ begin
 
   return new;
 end;
-$$;
+$fn$;
 
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created

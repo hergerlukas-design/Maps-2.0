@@ -90,10 +90,10 @@ Konto, Einstellungen liegen dann lokal im Browser.
 Mit Projekt:
 
 ```bash
-supabase db push          # oder den Inhalt der Migration im SQL-Editor ausführen
+supabase db push          # oder den Inhalt der Migrationen im SQL-Editor ausführen
 ```
 
-Die Migration liegt in `supabase/migrations/0001_init.sql` und legt an:
+Die Migrationen liegen in `supabase/migrations/` und legen an:
 
 - `profiles`, `vehicles`, `settings`, `favorites`, `trips`, `push_subscriptions`
 - Row Level Security auf allen Tabellen — jeder Nutzer sieht ausschließlich
@@ -101,6 +101,16 @@ Die Migration liegt in `supabase/migrations/0001_init.sql` und legt an:
 - CHECK-Constraints, die dieselben Grenzen erzwingen wie die UI
 - einen Trigger, der bei jeder Registrierung Profil und Standardeinstellungen
   anlegt
+
+`0002` entzieht den beiden Trigger-Funktionen das EXECUTE-Recht für `anon` und
+`authenticated`: PostgREST veröffentlicht sonst jede Funktion im public-Schema
+auch als `/rest/v1/rpc/…`, und `handle_new_user()` läuft als SECURITY DEFINER.
+
+Nach dem Einspielen lohnt sich ein Blick auf die Advisories:
+
+```bash
+supabase inspect db          # oder im Dashboard unter Advisors
+```
 
 ### Web Push
 
