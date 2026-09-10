@@ -245,6 +245,9 @@ jobs:
           echo ""
 
           CAPS=$(curl -fsS --max-time 10 "$URL/api/capabilities" || echo '{}')
+          # Auch ins Log, nicht nur in die Zusammenfassung: Beim Nachsehen,
+          # warum eine Quelle fehlt, ist das Log die Stelle, an der man sucht.
+          echo "Aktive Datenquellen: $CAPS"
 
           {
             echo "### Deploy fertig :rocket:"
