@@ -121,6 +121,39 @@ jobs:
 
           exit 1
 
+      # Ohne zugewiesene IP-Adresse gibt es für <app>.fly.dev keinen
+      # DNS-Eintrag: Der Deploy läuft durch, die Maschinen sind gesund, und der
+      # Aufruf scheitert trotzdem mit ERR_NAME_NOT_RESOLVED.
+      #
+      # `fly launch` weist die Adressen automatisch zu, eine über das Dashboard
+      # oder `apps create` angelegte App bekommt sie nicht.
+      - name: IP-Adressen sicherstellen
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          set -uo pipefail
+          IPS=$(flyctl ips list --app "$APP" 2>/dev/null || true)
+          echo "$IPS"
+
+          if printf '%s' "$IPS" | grep -qE '^\s*v4'; then
+            echo "IPv4 vorhanden."
+          else
+            echo "IPv4 wird zugewiesen (shared, kostenfrei)."
+            flyctl ips allocate-v4 --shared --app "$APP" || \
+              echo "::warning::IPv4 konnte nicht zugewiesen werden."
+          fi
+
+          if printf '%s' "$IPS" | grep -qE '^\s*v6'; then
+            echo "IPv6 vorhanden."
+          else
+            echo "IPv6 wird zugewiesen."
+            flyctl ips allocate-v6 --app "$APP" || \
+              echo "::warning::IPv6 konnte nicht zugewiesen werden."
+          fi
+
+          echo "--- Stand danach ---"
+          flyctl ips list --app "$APP" || true
+
       # Server-Schlüssel gehören NICHT ins Browser-Bundle. Sie werden als
       # Fly-Secrets hinterlegt und zur Laufzeit gelesen.
       #
@@ -172,10 +205,55 @@ jobs:
             --build-arg VITE_SUPABASE_PUBLISHABLE_KEY="${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}" \
             --build-arg VITE_GEOCODING_COUNTRIES="de,at,ch"
 
-      - name: Adresse ausgeben
+      # Ein Deploy, den niemand aufrufen kann, ist kein erfolgreicher Deploy.
+      # Fly meldet gesunde Maschinen auch dann, wenn die App mangels
+      # IP-Zuweisung gar nicht im DNS steht — deshalb hier ein echter Aufruf
+      # von außen, mit Geduld für die DNS-Verbreitung.
+      - name: App von außen aufrufen
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
-          echo "### Deploy fertig :rocket:" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "App läuft unter https://$APP.fly.dev" >> "$GITHUB_STEP_SUMMARY"
+          set -uo pipefail
+          URL="https://$APP.fly.dev"
+          echo "Prüfe $URL/api/health"
+
+          ok=0
+          for versuch in $(seq 1 12); do
+            if curl -fsS --max-time 10 "$URL/api/health" -o health.json 2>/dev/null; then
+              ok=1
+              break
+            fi
+            echo "  Versuch $versuch: noch keine Antwort, warte 10 s …"
+            sleep 10
+          done
+
+          if [ "$ok" -ne 1 ]; then
+            echo "::error::$URL antwortet nicht. Häufigste Ursache: der App fehlen IP-Adressen (dann steht sie nicht im DNS). Siehe den Schritt 'IP-Adressen sicherstellen' weiter oben."
+            {
+              echo "### Deploy ausgeliefert, aber nicht erreichbar :warning:"
+              echo ""
+              echo "\`$URL\` antwortet nicht auf \`/api/health\`."
+              echo ""
+              echo "Prüfe die Ausgabe von \`flyctl ips list\` im Schritt *IP-Adressen sicherstellen*:"
+              echo "Ohne einen v4- oder v6-Eintrag gibt es keinen DNS-Eintrag für die Domain."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          echo "Antwort:"
+          cat health.json
+          echo ""
+
+          CAPS=$(curl -fsS --max-time 10 "$URL/api/capabilities" || echo '{}')
+
+          {
+            echo "### Deploy fertig :rocket:"
+            echo ""
+            echo "**$URL** antwortet."
+            echo ""
+            echo "Aktive Datenquellen:"
+            echo ""
+            echo '```json'
+            echo "$CAPS"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
