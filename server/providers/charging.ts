@@ -330,6 +330,13 @@ export async function searchChargingStops(
   const byId = new Map<string, ChargingStop>();
   let anyFresh = false;
 
+  // Hinweise und echte Fehlschläge getrennt halten. „Kein GoingElectric-Key
+  // konfiguriert" ist eine Information über die gewählte Quelle, keine
+  // Fehlerursache — würde man beides in einen Topf werfen, meldete die App bei
+  // einem Ausfall von Open Charge Map einen fehlenden Key als Grund und
+  // schickte den Nutzer auf die falsche Fährte.
+  const failures: string[] = [];
+
   const collect = async (
     label: 'goingelectric' | 'openchargemap',
     load: (point: Position) => Promise<{ stops: ChargingStop[]; cached: boolean }>,
@@ -341,7 +348,7 @@ export async function searchChargingStops(
         const reason = result.reason;
         const message =
           reason instanceof Error ? reason.message : 'Teilabfrage fehlgeschlagen.';
-        if (!warnings.includes(message)) warnings.push(message);
+        if (!failures.includes(message)) failures.push(message);
         continue;
       }
       succeeded++;
@@ -367,11 +374,16 @@ export async function searchChargingStops(
   }
 
   if (!ok) {
+    // Die zuletzt versuchte Quelle ist die aussagekräftige Ursache.
     throw new ProviderError(
-      warnings[0] ?? 'Keine Ladesäulen-Quelle erreichbar.',
+      failures[failures.length - 1] ?? 'Keine Ladesäulen-Quelle erreichbar.',
       'upstream',
     );
   }
+
+  // Teilausfälle gehören in die Antwort, damit die Oberfläche sie anzeigen
+  // kann — sie haben das Ergebnis aber nicht verhindert.
+  warnings.push(...failures);
 
   const filtered = [...byId.values()].filter((stop) => {
     const usable = stop.connectors.filter(
