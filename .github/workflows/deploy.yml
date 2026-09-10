@@ -54,18 +54,62 @@ jobs:
           fi
 
       # Beim allerersten Lauf existiert die App auf Fly noch nicht.
+      #
+      # Die Organisation lässt sich über die Repository-Variable FLY_ORG
+      # setzen (Settings → Secrets and variables → Actions → Variables);
+      # ohne Angabe nimmt Fly die persönliche Organisation.
       - name: App anlegen, falls noch nicht vorhanden
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_ORG: ${{ vars.FLY_ORG || 'personal' }}
         run: |
           APP=$(grep -E '^app\s*=' fly.toml | head -1 | sed -E 's/.*"(.*)".*/\1/')
           echo "App: $APP"
+          echo "Organisation: $FLY_ORG"
+
           if flyctl status --app "$APP" >/dev/null 2>&1; then
             echo "App existiert bereits."
-          else
-            echo "App wird angelegt."
-            flyctl apps create "$APP" --org personal
+            exit 0
           fi
+
+          echo "App existiert noch nicht — wird angelegt."
+          if flyctl apps create "$APP" --org "$FLY_ORG" 2> create-error.txt; then
+            echo "Angelegt."
+            exit 0
+          fi
+
+          cat create-error.txt
+          echo ""
+          echo "::error::Die App '$APP' konnte nicht angelegt werden. Die drei häufigsten Ursachen stehen unten in der Zusammenfassung."
+
+          {
+            echo "### Deploy fehlgeschlagen: App konnte nicht angelegt werden"
+            echo ""
+            echo "Fly meldet:"
+            echo ""
+            echo '```'
+            cat create-error.txt
+            echo '```'
+            echo ""
+            echo "**Wenn dort \`unauthorized\` steht,** ist fast immer die Token-Art die Ursache:"
+            echo "Ein *Deploy-Token* ist an eine bestehende App gebunden und darf keine neuen anlegen."
+            echo ""
+            echo "Zwei Wege:"
+            echo ""
+            echo "1. **App einmalig im Fly-Dashboard anlegen** (fly.io → Launch a new app),"
+            echo "   exakt unter dem Namen \`$APP\`. Danach genügt der Deploy-Token für alle weiteren Läufe."
+            echo "2. **Org-weiten Token verwenden:** fly.io → Account → Access Tokens →"
+            echo "   einen Token für die *Organisation* statt für eine App erstellen und als"
+            echo "   \`FLY_API_TOKEN\` hinterlegen."
+            echo ""
+            echo "**Wenn dort steht, der Name sei vergeben:** Fly-App-Namen sind weltweit eindeutig."
+            echo "Dann in \`fly.toml\` die Zeile \`app = "…"\` auf einen freien Namen ändern."
+            echo ""
+            echo "**Wenn die Organisation nicht gefunden wird:** Repository-Variable \`FLY_ORG\`"
+            echo "auf den Namen deiner Fly-Organisation setzen (aktuell: \`$FLY_ORG\`)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          exit 1
 
       # Server-Schlüssel gehören NICHT ins Browser-Bundle. Sie werden als
       # Fly-Secrets hinterlegt und zur Laufzeit gelesen.
