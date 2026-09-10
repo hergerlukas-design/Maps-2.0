@@ -129,18 +129,52 @@ geschlossener App entfällt.
 
 ## Deployment (Fly.io)
 
+Zwei Wege. Der erste braucht kein Terminal und funktioniert auch vom Handy.
+
+### A) Per GitHub Actions — ohne Terminal
+
+Einmalig einzurichten, danach ist jeder Deploy ein Knopfdruck.
+
+**1. Fly-Konto und Token.** Auf [fly.io](https://fly.io) registrieren, dann unter
+*Account → Access Tokens* ein Token erstellen (Typ: Deploy Token). Der Wert
+beginnt mit `Fly...` bzw. `fm2_...`.
+
+**2. Secrets im Repository hinterlegen.** Auf GitHub im Repo:
+*Settings → Secrets and variables → Actions → New repository secret*.
+
+| Name | Pflicht | Wofür |
+|---|---|---|
+| `FLY_API_TOKEN` | ja | Deploy-Berechtigung |
+| `VITE_MAPBOX_TOKEN` | ja | Karte, Routing, Adresssuche |
+| `VITE_SUPABASE_URL` | nein | Konten und Synchronisierung |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | nein | dito |
+| `TANKERKOENIG_API_KEY` | nein | Kraftstoffpreise |
+| `GOINGELECTRIC_API_KEY` | nein | Ladesäulen (sonst Open Charge Map) |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | nein | Web Push |
+
+Alles außer den ersten beiden ist optional — fehlt ein Wert, schaltet die App
+die betroffene Funktion sichtbar ab, statt zu scheitern.
+
+**3. Deploy auslösen.** Reiter *Actions* → *Deploy zu Fly.io* → *Run workflow*.
+
+Der Workflow prüft erst Typen und Tests und liefert nur bei grüner Suite aus.
+Die Adresse der laufenden App steht danach in der Zusammenfassung des Laufs.
+
+Die Aufteilung ist bewusst: `VITE_*`-Werte werden als `--build-arg` übergeben,
+weil sie zur Build-Zeit ins Browser-Bundle eingebacken werden. Die Server-Keys
+gehen als Fly-Secrets raus (`--stage`, damit kein zusätzlicher Neustart
+entsteht) und landen dadurch nie im Image.
+
+### B) Vom eigenen Rechner
+
 ```bash
 fly launch --no-deploy --copy-config
 fly secrets set TANKERKOENIG_API_KEY=… GOINGELECTRIC_API_KEY=… \
                 VAPID_PUBLIC_KEY=… VAPID_PRIVATE_KEY=… VAPID_SUBJECT=mailto:…
 fly deploy --build-arg VITE_MAPBOX_TOKEN=… \
            --build-arg VITE_SUPABASE_URL=… \
-           --build-arg VITE_SUPABASE_ANON_KEY=…
+           --build-arg VITE_SUPABASE_PUBLISHABLE_KEY=…
 ```
-
-Die `VITE_*`-Werte müssen als `--build-arg` kommen, weil sie zur Build-Zeit in
-das Bundle eingebacken werden; die Server-Keys gehören in `fly secrets` und
-landen so nie im Image.
 
 ## Projektstruktur
 

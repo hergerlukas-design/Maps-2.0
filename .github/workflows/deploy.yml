@@ -1,0 +1,129 @@
+name: Deploy zu Fly.io
+
+# Manuell per Knopfdruck ("Run workflow") und automatisch bei Push auf den
+# Entwicklungsbranch. Der manuelle Weg ist der wichtige: er lässt sich vom
+# Handy aus über die GitHub-Oberfläche auslösen, ohne Terminal.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - claude/fuel-charging-finder-app-k31ptb
+
+# Zwei gleichzeitige Deploys derselben App würden sich gegenseitig überholen.
+concurrency:
+  group: fly-deploy
+  cancel-in-progress: false
+
+jobs:
+  pruefen:
+    name: Tests und Typprüfung
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # Ein Deploy, der eine rote Testsuite ausliefert, kostet mehr als er nützt.
+      - name: Typprüfung
+        run: npx tsc -b --noEmit
+
+      - name: Tests
+        run: npm test
+
+  deploy:
+    name: Bauen und ausliefern
+    needs: pruefen
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Token vorhanden?
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "${FLY_API_TOKEN}" ]; then
+            echo "::error::FLY_API_TOKEN fehlt. Unter Settings → Secrets and variables → Actions anlegen."
+            exit 1
+          fi
+
+      # Beim allerersten Lauf existiert die App auf Fly noch nicht.
+      - name: App anlegen, falls noch nicht vorhanden
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          APP=$(grep -E '^app\s*=' fly.toml | head -1 | sed -E 's/.*"(.*)".*/\1/')
+          echo "App: $APP"
+          if flyctl status --app "$APP" >/dev/null 2>&1; then
+            echo "App existiert bereits."
+          else
+            echo "App wird angelegt."
+            flyctl apps create "$APP" --org personal
+          fi
+
+      # Server-Schlüssel gehören NICHT ins Browser-Bundle. Sie werden als
+      # Fly-Secrets hinterlegt und zur Laufzeit gelesen.
+      #
+      # `--stage` schreibt sie, ohne die App neu zu starten; der folgende
+      # Deploy übernimmt sie. Ohne das Flag würde jeder Lauf einen zusätzlichen
+      # Neustart auslösen.
+      - name: Server-Secrets übertragen
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          TANKERKOENIG_API_KEY: ${{ secrets.TANKERKOENIG_API_KEY }}
+          GOINGELECTRIC_API_KEY: ${{ secrets.GOINGELECTRIC_API_KEY }}
+          OPENCHARGEMAP_API_KEY: ${{ secrets.OPENCHARGEMAP_API_KEY }}
+          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
+        run: |
+          set -euo pipefail
+          APP=$(grep -E '^app\s*=' fly.toml | head -1 | sed -E 's/.*"(.*)".*/\1/')
+          args=()
+          add() {
+            if [ -n "${2:-}" ]; then
+              args+=("$1=$2")
+              echo "  gesetzt: $1"
+            else
+              echo "  übersprungen (leer): $1"
+            fi
+          }
+          add TANKERKOENIG_API_KEY  "${TANKERKOENIG_API_KEY:-}"
+          add GOINGELECTRIC_API_KEY "${GOINGELECTRIC_API_KEY:-}"
+          add OPENCHARGEMAP_API_KEY "${OPENCHARGEMAP_API_KEY:-}"
+          add VAPID_PUBLIC_KEY      "${VAPID_PUBLIC_KEY:-}"
+          add VAPID_PRIVATE_KEY     "${VAPID_PRIVATE_KEY:-}"
+          add VAPID_SUBJECT         "${VAPID_SUBJECT:-}"
+
+          if [ ${#args[@]} -eq 0 ]; then
+            echo "Keine Server-Secrets hinterlegt — die App läuft mit Open Charge Map und ohne Push."
+          else
+            flyctl secrets set --stage --app "$APP" "${args[@]}"
+          fi
+
+      # Die VITE_-Werte werden zur BUILD-Zeit in das Browser-Bundle eingebacken
+      # und müssen deshalb als Build-Argumente kommen, nicht als Fly-Secrets.
+      - name: Deploy
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          flyctl deploy --remote-only \
+            --build-arg VITE_MAPBOX_TOKEN="${{ secrets.VITE_MAPBOX_TOKEN }}" \
+            --build-arg VITE_SUPABASE_URL="${{ secrets.VITE_SUPABASE_URL }}" \
+            --build-arg VITE_SUPABASE_PUBLISHABLE_KEY="${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}" \
+            --build-arg VITE_GEOCODING_COUNTRIES="de,at,ch"
+
+      - name: Adresse ausgeben
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          APP=$(grep -E '^app\s*=' fly.toml | head -1 | sed -E 's/.*"(.*)".*/\1/')
+          echo "### Deploy fertig :rocket:" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "App läuft unter https://$APP.fly.dev" >> "$GITHUB_STEP_SUMMARY"
