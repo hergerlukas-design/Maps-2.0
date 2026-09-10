@@ -302,6 +302,47 @@ export function RoutePlanner(props: RoutePlannerProps) {
             </div>
           )}
 
+          <div>
+            <label
+              htmlFor="typical-range"
+              className="mb-1.5 block text-xs font-medium tracking-wide text-ink-300 uppercase"
+            >
+              Volle Reichweite <span className="normal-case">(optional)</span>
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                id="typical-range"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                max={2000}
+                step={10}
+                placeholder="—"
+                value={vehicle.typicalRangeKm ?? ''}
+                onChange={(event) => {
+                  const raw = event.target.value.trim();
+                  if (raw === '') {
+                    props.onVehiclePatch({ typicalRangeKm: null });
+                    return;
+                  }
+                  const parsed = Number(raw);
+                  props.onVehiclePatch({
+                    typicalRangeKm: Number.isFinite(parsed)
+                      ? Math.max(0, Math.min(2000, parsed))
+                      : null,
+                  });
+                }}
+                className="tabular touch-target w-28 rounded-xl border border-ink-700 bg-ink-850 px-3
+                           text-sm text-ink-100 placeholder:text-ink-500"
+              />
+              <span className="text-sm text-ink-400">km bei vollem Tank/Akku</span>
+            </div>
+            <p className="mt-1.5 text-xs text-ink-400">
+              Nur eine Abkürzung: Ist der Wert gesetzt, lässt sich die Reichweite
+              oben mit einem Tippen darauf setzen — auch nach einem Tankstopp.
+            </p>
+          </div>
+
           {vehicleNeedsCharging(vehicle.kind) && (
             <div>
               <span className="mb-1.5 block text-xs font-medium tracking-wide text-ink-300 uppercase">

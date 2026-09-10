@@ -4,6 +4,11 @@ import type { StopWaypoint } from '@/types/domain';
 interface TopUpDialogProps {
   /** The stop just reached, or `null` when the dialog is closed. */
   stop: StopWaypoint | null;
+  /**
+   * Vorbelegung des Feldes: die eingetragene volle Reichweite des Fahrzeugs,
+   * ersatzweise der zuletzt selbst eingegebene Wert. Bewusst keine erfundene
+   * Zahl — die volle Reichweite ist von Fahrzeug zu Fahrzeug zu verschieden.
+   */
   suggestedRangeKm: number | null;
   onConfirm: (rangeKm: number) => void;
   onSkip: () => void;
@@ -22,7 +27,7 @@ export function TopUpDialog({
   onConfirm,
   onSkip,
 }: TopUpDialogProps) {
-  const [value, setValue] = useState(suggestedRangeKm ?? 500);
+  const [value, setValue] = useState(suggestedRangeKm ?? 0);
 
   useEffect(() => {
     if (stop && suggestedRangeKm != null) setValue(suggestedRangeKm);

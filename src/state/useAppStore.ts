@@ -58,7 +58,10 @@ function defaultVehicle(): Vehicle {
     kind: 'combustion',
     fuel: 'e10',
     connectors: [],
-    typicalRangeKm: 600,
+    // Bewusst leer: Die volle Reichweite unterscheidet sich von Fahrzeug zu
+    // Fahrzeug um mehr als den Faktor vier. Ein Vorgabewert wäre für fast
+    // jeden falsch; wer die Abkürzung will, trägt seinen Wert selbst ein.
+    typicalRangeKm: null,
     consumption: { per100km: null },
     isDefault: true,
     createdAt: new Date(0).toISOString(),

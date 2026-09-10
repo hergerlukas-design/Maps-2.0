@@ -267,7 +267,7 @@ export default function App() {
 
       <TopUpDialog
         stop={reachedStop}
-        suggestedRangeKm={vehicle.typicalRangeKm}
+        suggestedRangeKm={vehicle.typicalRangeKm ?? plan.remainingRangeKm}
         onConfirm={(rangeKm) => {
           session.recordTopUp(rangeKm);
           setReachedStop(null);
