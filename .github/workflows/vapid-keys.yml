@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       subject:
-        description: 'Kontaktadresse für die Push-Dienste, z. B. mailto:du@example.com'
+        description: 'Kontaktadresse für die Push-Dienste, z. B. du@example.com'
         required: true
         type: string
       force_regenerate:
@@ -48,14 +48,24 @@ jobs:
             exit 1
           fi
 
-          # web-push akzeptiert als `subject` nur mailto: oder eine https-URL.
+          # web-push verlangt als `subject` ein mailto: oder eine https-URL.
+          # Eine blanke E-Mail-Adresse ist die naheliegende Eingabe, deshalb
+          # wird das Präfix ergänzt statt die Eingabe abzulehnen.
           case "${SUBJECT}" in
-            mailto:*|https://*) ;;
+            mailto:*|https://*)
+              ;;
+            *@*.*)
+              SUBJECT="mailto:${SUBJECT}"
+              echo "Adresse zu '${SUBJECT}' ergänzt."
+              ;;
             *)
-              echo "::error::subject muss mit 'mailto:' oder 'https://' beginnen — erhalten: ${SUBJECT}"
+              echo "::error::'${SUBJECT}' ist weder eine E-Mail-Adresse noch eine https-URL. Erwartet wird etwa 'du@example.com'."
               exit 1
               ;;
           esac
+
+          # Normalisierten Wert an die folgenden Schritte weitergeben.
+          echo "VAPID_SUBJECT=${SUBJECT}" >> "$GITHUB_ENV"
 
           APP="${FLY_APP:-$(grep -E '^app\s*=' fly.toml | head -1 | sed -E 's/.*"(.*)".*/\1/')}"
           echo "APP=$APP" >> "$GITHUB_ENV"
@@ -84,7 +94,6 @@ jobs:
       - name: Schlüsselpaar erzeugen und als Fly-Secret setzen
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-          SUBJECT: ${{ inputs.subject }}
         run: |
           set -euo pipefail
 
@@ -106,7 +115,7 @@ jobs:
           flyctl secrets set --app "$APP" \
             VAPID_PUBLIC_KEY="$PUBLIC" \
             VAPID_PRIVATE_KEY="$PRIVATE" \
-            VAPID_SUBJECT="$SUBJECT"
+            VAPID_SUBJECT="$VAPID_SUBJECT"
 
           echo "PUBLIC_KEY=$PUBLIC" >> "$GITHUB_ENV"
 

@@ -125,8 +125,8 @@ weiterhin — nur Push bei geschlossener App entfällt.
 **Ohne Terminal:** Der Workflow *VAPID-Schlüssel erzeugen* (Reiter *Actions*)
 erzeugt das Paar im Runner und legt es direkt als Fly-Secret ab. Der private
 Schlüssel wird maskiert, nicht ausgegeben und nicht als GitHub-Secret
-gespeichert. Als `subject` eine Kontaktadresse angeben (`mailto:…`), die die
-Push-Dienste bei Problemen anschreiben können.
+gespeichert. Als `subject` genügt die eigene E-Mail-Adresse — das von den
+Push-Diensten verlangte `mailto:` ergänzt der Workflow selbst.
 
 Der Workflow bricht ab, wenn bereits Schlüssel hinterlegt sind. Das ist
 Absicht: Ein neues Paar macht **jede bestehende Push-Anmeldung ungültig**, weil
