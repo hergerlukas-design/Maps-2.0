@@ -164,7 +164,19 @@ beginnt mit `Fly...` bzw. `fm2_...`.
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | nein | dito |
 | `TANKERKOENIG_API_KEY` | nein | Kraftstoffpreise |
 | `GOINGELECTRIC_API_KEY` | nein | Ladesäulen (sonst Open Charge Map) |
-| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | nein | Web Push |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | nein | Web Push (bequemer über den VAPID-Workflow) |
+
+Zusätzlich gibt es zwei *Variables* (gleiche Seite, Reiter *Variables*) — keine
+Secrets, weil es keine Geheimnisse sind:
+
+| Name | Wenn nötig |
+|---|---|
+| `FLY_APP` | Wenn die App auf Fly anders heißt als `app = …` in `fly.toml` |
+| `FLY_ORG` | Wenn deine Fly-Organisation nicht `personal` heißt |
+
+Fly-App-Namen bestehen ausschließlich aus Kleinbuchstaben, Ziffern und
+Bindestrichen und sind **weltweit eindeutig** — „Maps 2.0" wäre also kein
+gültiger Name, `maps-2-0` schon.
 
 Alles außer den ersten beiden ist optional — fehlt ein Wert, schaltet die App
 die betroffene Funktion sichtbar ab, statt zu scheitern.

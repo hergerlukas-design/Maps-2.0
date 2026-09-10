@@ -62,10 +62,20 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           FLY_ORG: ${{ vars.FLY_ORG || 'personal' }}
+          FLY_APP: ${{ vars.FLY_APP }}
         run: |
-          APP=$(grep -E '^app\s*=' fly.toml | head -1 | sed -E 's/.*"(.*)".*/\1/')
+          # Repository-Variable FLY_APP hat Vorrang vor fly.toml, damit sich der
+          # App-Name ohne Code-Änderung setzen lässt.
+          APP="${FLY_APP:-$(grep -E '^app\s*=' fly.toml | head -1 | sed -E 's/.*"(.*)".*/\1/')}"
+          echo "APP=$APP" >> "$GITHUB_ENV"
           echo "App: $APP"
           echo "Organisation: $FLY_ORG"
+
+          # Fly-Namen: nur Kleinbuchstaben, Ziffern und Bindestriche.
+          if ! printf '%s' "$APP" | grep -qE '^[a-z0-9][a-z0-9-]*$'; then
+            echo "::error::'$APP' ist kein gültiger Fly-App-Name. Erlaubt sind nur Kleinbuchstaben, Ziffern und Bindestriche — keine Leerzeichen, Punkte oder Großbuchstaben."
+            exit 1
+          fi
 
           if flyctl status --app "$APP" >/dev/null 2>&1; then
             echo "App existiert bereits."
@@ -128,7 +138,6 @@ jobs:
           VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
         run: |
           set -euo pipefail
-          APP=$(grep -E '^app\s*=' fly.toml | head -1 | sed -E 's/.*"(.*)".*/\1/')
           args=()
           add() {
             if [ -n "${2:-}" ]; then
@@ -157,7 +166,7 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
-          flyctl deploy --remote-only \
+          flyctl deploy --remote-only --app "$APP" \
             --build-arg VITE_MAPBOX_TOKEN="${{ secrets.VITE_MAPBOX_TOKEN }}" \
             --build-arg VITE_SUPABASE_URL="${{ secrets.VITE_SUPABASE_URL }}" \
             --build-arg VITE_SUPABASE_PUBLISHABLE_KEY="${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}" \
@@ -167,7 +176,6 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
-          APP=$(grep -E '^app\s*=' fly.toml | head -1 | sed -E 's/.*"(.*)".*/\1/')
           echo "### Deploy fertig :rocket:" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "App läuft unter https://$APP.fly.dev" >> "$GITHUB_STEP_SUMMARY"
