@@ -74,10 +74,15 @@ export function MapView({
   const puckRef = useRef<mapboxgl.Marker | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** Suppresses the "driver panned" detection while we move the camera. */
-  const programmaticMoveRef = useRef(false);
   const cameraModeRef = useRef(cameraMode);
   cameraModeRef.current = cameraMode;
+  /**
+   * Der zuletzt bekannte Fahrzustand, als Ref statt als Abhängigkeit.
+   * Die Überblicksansicht braucht den Fortschritt, darf aber nicht bei jedem
+   * GPS-Fix neu einpassen — sonst reißt sie dem Fahrer die Karte aus der Hand.
+   */
+  const navRef = useRef<NavState | null>(nav);
+  navRef.current = nav;
 
   /* ---------------------------------------------------------------- *
    * Map lifecycle
@@ -224,14 +229,28 @@ export function MapView({
       }
     });
 
-    /** Any drag/zoom the driver initiates drops the camera out of follow mode. */
-    const onUserInteraction = () => {
-      if (programmaticMoveRef.current) return;
+    /**
+     * Eine Geste des Fahrers löst die Kamera aus dem Folgemodus.
+     *
+     * Entscheidend ist `originalEvent`: Mapbox setzt es nur bei echten
+     * Eingaben, nicht bei `easeTo`/`fitBounds`. Ein Zeit-Flag taugt hier
+     * nicht — die Folgekamera bewegt sich im Sekundentakt, sodass ein solches
+     * Flag dauerhaft gesetzt wäre und jede Geste verschluckte.
+     */
+    // Mapbox deklariert `originalEvent` nicht auf allen Event-Typen, obwohl es
+    // zur Laufzeit bei Eingaben gesetzt ist — deshalb die Prüfung im Helfer.
+    const isUserGesture = (event: unknown): boolean =>
+      (event as { originalEvent?: unknown } | undefined)?.originalEvent != null;
+
+    const dropToFree = (event: unknown) => {
+      if (!isUserGesture(event)) return;
       if (cameraModeRef.current !== 'free') onCameraModeChange('free');
     };
-    map.on('dragstart', onUserInteraction);
-    map.on('zoomstart', onUserInteraction);
-    map.on('rotatestart', onUserInteraction);
+
+    map.on('dragstart', (event) => dropToFree(event));
+    map.on('zoomstart', (event) => dropToFree(event));
+    map.on('rotatestart', (event) => dropToFree(event));
+    map.on('pitchstart', (event) => dropToFree(event));
 
     return () => {
       map.remove();
@@ -364,50 +383,45 @@ export function MapView({
    * Camera
    * ---------------------------------------------------------------- */
 
+  // Folgekamera: läuft bewusst bei jedem Fix — das ist ihr Zweck.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !ready) return;
+    if (!map || !ready || cameraMode !== 'follow' || !nav) return;
+    map.easeTo({
+      center: nav.snapped,
+      bearing: nav.courseDeg,
+      // Je schneller gefahren wird, desto weiter muss man nach vorne sehen.
+      zoom: nav.speedMps > 25 ? 15 : nav.speedMps > 8 ? 16 : 16.8,
+      pitch: 55,
+      // Mittelpunkt nach unten versetzt, damit der Großteil des Bildes die
+      // Straße voraus zeigt.
+      padding: { top: 220, bottom: 0, left: 0, right: 0 },
+      duration: 900,
+      easing: (t) => t,
+    });
+  }, [cameraMode, nav, ready]);
 
-    if (cameraMode === 'follow' && nav) {
-      programmaticMoveRef.current = true;
-      map.easeTo({
-        center: nav.snapped,
-        bearing: nav.courseDeg,
-        // A driver needs to see further ahead the faster they go.
-        zoom: nav.speedMps > 25 ? 15 : nav.speedMps > 8 ? 16 : 16.8,
-        pitch: 55,
-        // Offset the centre downwards so most of the screen shows the road ahead.
-        padding: { top: 220, bottom: 0, left: 0, right: 0 },
-        duration: 900,
-        easing: (t) => t,
-      });
-      // `easeTo` fires movestart synchronously; clear the flag after it settles.
-      const timer = setTimeout(() => {
-        programmaticMoveRef.current = false;
-      }, 950);
-      return () => clearTimeout(timer);
-    }
+  // Überblick: einmal einpassen beim Wechsel in den Modus und bei neuer Route.
+  // Bewusst ohne `nav` in den Abhängigkeiten, sonst würde jeder GPS-Fix die
+  // Ansicht zurücksetzen und Zoomen unmöglich machen.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || cameraMode !== 'overview') return;
+    if (!line || line.coordinates.length < 2) return;
 
-    if (cameraMode === 'overview' && line && line.coordinates.length > 1) {
-      const remaining = nav
-        ? sliceLine(line, nav.progressM, line.totalLengthM)
-        : line.coordinates;
-      const bounds = boundsOf(remaining, 0.12);
-      if (!bounds) return;
-      programmaticMoveRef.current = true;
-      map.fitBounds(bounds, {
-        padding: { top: 160, bottom: 220, left: 48, right: 48 },
-        bearing: 0,
-        pitch: 0,
-        duration: 900,
-      });
-      const timer = setTimeout(() => {
-        programmaticMoveRef.current = false;
-      }, 950);
-      return () => clearTimeout(timer);
-    }
-    return;
-  }, [cameraMode, nav, line, ready]);
+    const progressM = navRef.current?.progressM ?? 0;
+    const remaining =
+      progressM > 0 ? sliceLine(line, progressM, line.totalLengthM) : line.coordinates;
+    const bounds = boundsOf(remaining, 0.12);
+    if (!bounds) return;
+
+    map.fitBounds(bounds, {
+      padding: { top: 160, bottom: 220, left: 48, right: 48 },
+      bearing: 0,
+      pitch: 0,
+      duration: 900,
+    });
+  }, [cameraMode, line, ready]);
 
   /* ---------------------------------------------------------------- *
    * Fit the whole route once, when it first appears
@@ -421,15 +435,12 @@ export function MapView({
     fittedRouteRef.current = line;
     const bounds = boundsOf(line.coordinates, 0.1);
     if (!bounds) return;
-    programmaticMoveRef.current = true;
+    // Programmatisch, trägt also kein `originalEvent` und wirft die Kamera
+    // nicht in den freien Modus.
     map.fitBounds(bounds, {
       padding: { top: 120, bottom: 300, left: 40, right: 40 },
       duration: 800,
     });
-    const timer = setTimeout(() => {
-      programmaticMoveRef.current = false;
-    }, 850);
-    return () => clearTimeout(timer);
   }, [line, ready]);
 
   return (

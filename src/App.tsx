@@ -42,6 +42,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [cameraMode, setCameraMode] = useState<CameraMode>('follow');
+  const [plannerCollapsed, setPlannerCollapsed] = useState(false);
   const [highlightedStopId, setHighlightedStopId] = useState<string | null>(null);
   const [reachedStop, setReachedStop] = useState<StopWaypoint | null>(null);
   const tripIdRef = useRef<string | null>(null);
@@ -139,12 +140,18 @@ export default function App() {
 
   const calculate = useCallback(() => {
     if (!plan.origin || !plan.destination) return;
-    void session.planRoute(
-      plan.origin.location,
-      plan.destination.location,
-      plan.origin.name,
-      plan.destination.name,
-    );
+    void session
+      .planRoute(
+        plan.origin.location,
+        plan.destination.location,
+        plan.origin.name,
+        plan.destination.name,
+      )
+      // Nach dem Berechnen einklappen: Die berechnete Route will man sehen,
+      // nicht das Formular, das sie erzeugt hat.
+      .then((planned) => {
+        if (planned) setPlannerCollapsed(true);
+      });
   }, [plan.origin, plan.destination, session]);
 
   const startNavigation = useCallback(() => {
@@ -225,7 +232,11 @@ export default function App() {
       ) : (
         <div className="absolute inset-0 flex flex-col">
           <div className="pointer-events-none flex-1" />
-          <div className="pointer-events-auto max-h-[85%] overflow-hidden rounded-t-[var(--radius-sheet)] bg-ink-950/95 backdrop-blur-xl">
+          <div
+            className={`pointer-events-auto overflow-hidden rounded-t-[var(--radius-sheet)] bg-ink-950/95 backdrop-blur-xl transition-[max-height] duration-300 ${
+              plannerCollapsed ? 'max-h-40' : 'max-h-[85%]'
+            }`}
+          >
             <RoutePlanner
               origin={plan.origin}
               destination={plan.destination}
@@ -247,6 +258,8 @@ export default function App() {
               onStart={startNavigation}
               onOpenSettings={() => setSettingsOpen(true)}
               onOpenAccount={() => setAccountOpen(true)}
+              collapsed={plannerCollapsed}
+              onToggleCollapsed={() => setPlannerCollapsed((value) => !value)}
             />
           </div>
         </div>
@@ -357,13 +370,38 @@ function NavigatingLayer({
         )}
       </div>
 
-      {/* Camera controls, right edge */}
-      <div className="pointer-events-auto flex flex-1 flex-col items-end justify-center gap-2 px-3">
+      {/*
+        Kamera-Schaltflächen am rechten Rand.
+
+        Der Container muss `pointer-events-none` bleiben: Er füllt über
+        `flex-1` den gesamten Bereich zwischen Banner und Leiste, und mit
+        `pointer-events-auto` fängt dieses unsichtbare Feld jede Berührung ab,
+        die eigentlich der Karte gilt — Verschieben, Zoomen und Drehen wären
+        auf dem größten Teil des Bildschirms tot. Nur die Schaltfläche selbst
+        nimmt Eingaben an.
+      */}
+      <div className="pointer-events-none flex flex-1 flex-col items-end justify-center gap-2 px-3">
+        {/*
+          Nach einer eigenen Geste steht die Kamera auf `free`. Dann ist die
+          wichtigste Handlung, wieder zum Fahrzeug zurückzufinden — deshalb
+          wechselt die Schaltfläche dort ihre Bedeutung und wird hervorgehoben.
+          Ohne sie wäre Zoomen eine Sackgasse.
+        */}
         <button
           type="button"
           onClick={() => onCameraModeChange(cameraMode === 'follow' ? 'overview' : 'follow')}
-          className="panel touch-target grid place-items-center rounded-2xl px-3 text-ink-200 active:text-ink-100"
-          aria-label={cameraMode === 'follow' ? 'Gesamtroute anzeigen' : 'Ansicht folgt dem Fahrzeug'}
+          className={`panel pointer-events-auto touch-target grid place-items-center rounded-2xl px-3 active:text-ink-100 ${
+            cameraMode === 'free'
+              ? 'border-route-500/70 text-route-500'
+              : 'text-ink-200'
+          }`}
+          aria-label={
+            cameraMode === 'free'
+              ? 'Zurück zur Fahrzeugposition'
+              : cameraMode === 'follow'
+                ? 'Gesamtroute anzeigen'
+                : 'Ansicht folgt dem Fahrzeug'
+          }
         >
           {cameraMode === 'follow' ? (
             <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth={1.9}>

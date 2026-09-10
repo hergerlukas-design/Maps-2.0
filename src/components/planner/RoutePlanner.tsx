@@ -29,6 +29,9 @@ interface RoutePlannerProps {
   onStart: () => void;
   onOpenSettings: () => void;
   onOpenAccount: () => void;
+  /** Eingeklappt gibt der Planer die Karte frei. */
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
 }
 
 const CONNECTOR_CHOICES: ConnectorType[] = [
@@ -56,6 +59,7 @@ export function RoutePlanner(props: RoutePlannerProps) {
     routing,
     routeError,
     proximity,
+    collapsed,
   } = props;
 
   const canCalculate = origin !== null && destination !== null && !routing;
@@ -73,12 +77,61 @@ export function RoutePlanner(props: RoutePlannerProps) {
     };
   }, [route, remainingRangeKm]);
 
+  const grabHandle = (
+    <button
+      type="button"
+      onClick={props.onToggleCollapsed}
+      aria-expanded={!collapsed}
+      aria-label={collapsed ? 'Planer aufklappen' : 'Planer einklappen — Karte zeigen'}
+      className="flex w-full shrink-0 justify-center py-2.5"
+    >
+      <span className="h-1 w-10 rounded-full bg-ink-500" />
+    </button>
+  );
+
+  // Eingeklappt: nur das Nötigste, damit die Karte sichtbar und bedienbar ist.
+  if (collapsed) {
+    return (
+      <div className="flex flex-col">
+        {grabHandle}
+        <div
+          className="flex items-center gap-3 px-4 pb-1"
+          style={{ paddingBottom: 'calc(0.75rem + var(--safe-bottom))' }}
+        >
+          <button
+            type="button"
+            onClick={props.onToggleCollapsed}
+            className="min-w-0 flex-1 text-left"
+          >
+            <p className="truncate text-sm font-semibold text-ink-100">
+              {origin?.name ?? 'Start wählen'}
+              <span className="mx-1.5 text-ink-500">→</span>
+              {destination?.name ?? 'Ziel wählen'}
+            </p>
+            <p className="tabular truncate text-xs text-ink-400">
+              {route
+                ? `${formatDistance(route.distanceM)} · ca. ${formatDuration(route.durationS)} · ${remainingRangeKm} km Reichweite`
+                : 'Zum Bearbeiten tippen'}
+            </p>
+          </button>
+          <button
+            type="button"
+            onClick={route ? props.onStart : props.onCalculate}
+            disabled={!canCalculate && !route}
+            className="touch-target shrink-0 rounded-2xl bg-route-500 px-4 text-sm font-bold text-ink-950
+                       active:bg-route-600 disabled:bg-ink-700 disabled:text-ink-400"
+          >
+            {route ? 'Start' : 'Route'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full flex-col">
-      <header
-        className="flex items-center justify-between gap-3 px-4 pb-2"
-        style={{ paddingTop: 'calc(0.75rem + var(--safe-top))' }}
-      >
+      {grabHandle}
+      <header className="flex items-center justify-between gap-3 px-4 pb-2">
         <div>
           <h1 className="text-lg leading-tight font-bold">Reichweite</h1>
           <p className="text-xs text-ink-400">Tank- &amp; Ladestopp-Navigation</p>
