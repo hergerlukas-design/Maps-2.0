@@ -1,50 +1,40 @@
-# Fly.io-Konfiguration.
+# fly.toml app configuration file generated for maps-2-0 on 2026-09-10T18:22:48Z
 #
-# Vor dem ersten Deploy:
-#   fly launch --no-deploy --copy-config
-#   fly secrets set TANKERKOENIG_API_KEY=… GOINGELECTRIC_API_KEY=… \
-#                   VAPID_PUBLIC_KEY=… VAPID_PRIVATE_KEY=… VAPID_SUBJECT=mailto:…
-#   fly deploy --build-arg VITE_MAPBOX_TOKEN=… \
-#              --build-arg VITE_SUPABASE_URL=… \
-#              --build-arg VITE_SUPABASE_ANON_KEY=…
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
-# Die VITE_*-Werte müssen als --build-arg kommen, weil sie zur Build-Zeit in das
-# Browser-Bundle eingebacken werden. Alles andere gehört in `fly secrets`.
 
-app = "reichweite-nav"
-primary_region = "fra"
+app = 'maps-2-0'
+primary_region = 'fra'
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = 'Dockerfile'
 
 [env]
-  PORT = "8080"
-  HOST = "0.0.0.0"
-  NODE_ENV = "production"
-  CLIENT_DIR = "dist"
+  CLIENT_DIR = 'dist'
+  HOST = '0.0.0.0'
+  NODE_ENV = 'production'
+  PORT = '8080'
 
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = "suspend"
+  auto_stop_machines = 'suspend'
   auto_start_machines = true
-  # Eine Maschine bleibt wach: der TTL-Cache der Preisabfragen liegt im Prozess,
-  # ein Kaltstart würde ihn bei jeder Fahrt verwerfen.
   min_machines_running = 1
-  processes = ["app"]
+  processes = ['app']
 
   [http_service.concurrency]
-    type = "requests"
-    soft_limit = 200
+    type = 'requests'
     hard_limit = 250
+    soft_limit = 200
 
-[[http_service.checks]]
-  grace_period = "10s"
-  interval = "30s"
-  method = "GET"
-  timeout = "5s"
-  path = "/api/health"
+  [[http_service.checks]]
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '10s'
+    method = 'GET'
+    path = '/api/health'
 
 [[vm]]
-  size = "shared-cpu-1x"
-  memory = "512mb"
+  size = 'shared-cpu-1x'
+  memory = '512mb'
