@@ -11,7 +11,7 @@
 # Die VITE_*-Werte müssen als --build-arg kommen, weil sie zur Build-Zeit in das
 # Browser-Bundle eingebacken werden. Alles andere gehört in `fly secrets`.
 
-app = "reichweite-nav"
+app = "maps-2-0"
 primary_region = "fra"
 
 [build]
