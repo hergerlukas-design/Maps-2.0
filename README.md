@@ -119,13 +119,27 @@ supabase inspect db          # oder im Dashboard unter Advisors
 
 ### Web Push
 
+Ohne VAPID-Schlüsselpaar funktionieren die Hinweise in der geöffneten App
+weiterhin — nur Push bei geschlossener App entfällt.
+
+**Ohne Terminal:** Der Workflow *VAPID-Schlüssel erzeugen* (Reiter *Actions*)
+erzeugt das Paar im Runner und legt es direkt als Fly-Secret ab. Der private
+Schlüssel wird maskiert, nicht ausgegeben und nicht als GitHub-Secret
+gespeichert. Als `subject` eine Kontaktadresse angeben (`mailto:…`), die die
+Push-Dienste bei Problemen anschreiben können.
+
+Der Workflow bricht ab, wenn bereits Schlüssel hinterlegt sind. Das ist
+Absicht: Ein neues Paar macht **jede bestehende Push-Anmeldung ungültig**, weil
+die Geräte den alten öffentlichen Schlüssel gespeichert haben. Bewusstes
+Ersetzen geht über die Option `force_regenerate`.
+
+**Am eigenen Rechner:**
+
 ```bash
 npx web-push generate-vapid-keys
 ```
 
-Die beiden Werte als `VAPID_PUBLIC_KEY` und `VAPID_PRIVATE_KEY` setzen. Ohne
-sie funktionieren Hinweise in der geöffneten App weiterhin — nur Push bei
-geschlossener App entfällt.
+Die beiden Werte als `VAPID_PUBLIC_KEY` und `VAPID_PRIVATE_KEY` setzen.
 
 ## Deployment (Fly.io)
 

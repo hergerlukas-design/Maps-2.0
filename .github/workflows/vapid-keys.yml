@@ -1,0 +1,133 @@
+name: VAPID-Schlüssel erzeugen
+
+# Einmalig auszuführen, um Web Push zu aktivieren.
+#
+# Der Schlüssel wird in der Action erzeugt und direkt als Fly-Secret abgelegt.
+# Der private Teil verlässt den Runner nicht: er wird maskiert, nicht ausgegeben
+# und nicht als GitHub-Secret gespeichert.
+on:
+  workflow_dispatch:
+    inputs:
+      subject:
+        description: 'Kontaktadresse für die Push-Dienste, z. B. mailto:du@example.com'
+        required: true
+        type: string
+      force_regenerate:
+        description: 'Vorhandene Schlüssel ersetzen (macht ALLE bestehenden Push-Anmeldungen ungültig)'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: fly-secrets
+  cancel-in-progress: false
+
+jobs:
+  vapid:
+    name: Schlüsselpaar erzeugen und hinterlegen
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Voraussetzungen prüfen
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          SUBJECT: ${{ inputs.subject }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${FLY_API_TOKEN}" ]; then
+            echo "::error::FLY_API_TOKEN fehlt. Unter Settings → Secrets and variables → Actions anlegen."
+            exit 1
+          fi
+
+          # web-push akzeptiert als `subject` nur mailto: oder eine https-URL.
+          case "${SUBJECT}" in
+            mailto:*|https://*) ;;
+            *)
+              echo "::error::subject muss mit 'mailto:' oder 'https://' beginnen — erhalten: ${SUBJECT}"
+              exit 1
+              ;;
+          esac
+
+          APP=$(grep -E '^app\s*=' fly.toml | head -1 | sed -E 's/.*"(.*)".*/\1/')
+          echo "APP=$APP" >> "$GITHUB_ENV"
+
+          if ! flyctl status --app "$APP" >/dev/null 2>&1; then
+            echo "::error::Die App '$APP' existiert auf Fly noch nicht. Bitte zuerst den Deploy-Workflow ausführen."
+            exit 1
+          fi
+
+      # Ein neues Schlüsselpaar macht jede bestehende Push-Anmeldung ungültig:
+      # Die Geräte haben den alten öffentlichen Schlüssel gespeichert und
+      # müssten sich neu anmelden. Deshalb nicht versehentlich überschreiben.
+      - name: Vorhandene Schlüssel schützen
+        if: ${{ !inputs.force_regenerate }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Bewusst tolerant gegen das Tabellenformat von flyctl.
+          if flyctl secrets list --app "$APP" 2>/dev/null | grep -q 'VAPID_PRIVATE_KEY'; then
+            echo "::error::Es sind bereits VAPID-Schlüssel hinterlegt. Zum bewussten Ersetzen den Workflow mit 'force_regenerate' erneut starten — das meldet alle bestehenden Geräte ab."
+            exit 1
+          fi
+          echo "Keine vorhandenen Schlüssel — es wird ein neues Paar erzeugt."
+
+      - name: Schlüsselpaar erzeugen und als Fly-Secret setzen
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          SUBJECT: ${{ inputs.subject }}
+        run: |
+          set -euo pipefail
+
+          KEYS=$(npx --yes web-push generate-vapid-keys --json)
+          PUBLIC=$(printf '%s' "$KEYS" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(JSON.parse(s).publicKey))")
+          PRIVATE=$(printf '%s' "$KEYS" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(JSON.parse(s).privateKey))")
+
+          # Maskieren, bevor der Wert irgendwo auftauchen kann. Ab hier ersetzt
+          # GitHub ihn in jeder Logzeile durch ***.
+          echo "::add-mask::$PRIVATE"
+
+          if [ -z "$PUBLIC" ] || [ -z "$PRIVATE" ]; then
+            echo "::error::Schlüsselerzeugung lieferte kein vollständiges Paar."
+            exit 1
+          fi
+
+          # Ohne --stage: die Secrets sollen sofort greifen, nicht erst beim
+          # nächsten Deploy. Fly startet die Maschinen dafür kurz durch.
+          flyctl secrets set --app "$APP" \
+            VAPID_PUBLIC_KEY="$PUBLIC" \
+            VAPID_PRIVATE_KEY="$PRIVATE" \
+            VAPID_SUBJECT="$SUBJECT"
+
+          echo "PUBLIC_KEY=$PUBLIC" >> "$GITHUB_ENV"
+
+      - name: Ergebnis prüfen
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "Hinterlegte Secrets:"
+          flyctl secrets list --app "$APP" | grep -E 'NAME|VAPID' || true
+
+          {
+            echo "### Web Push aktiviert :bell:"
+            echo ""
+            echo "Öffentlicher Schlüssel (unbedenklich, wird ohnehin an den Browser ausgeliefert):"
+            echo ""
+            echo '```'
+            echo "${PUBLIC_KEY}"
+            echo '```'
+            echo ""
+            echo "Der private Schlüssel liegt ausschließlich als Fly-Secret und wurde nirgends ausgegeben."
+            echo ""
+            echo "Zum Prüfen: App öffnen → Einstellungen → *Benachrichtigungen prüfen* →"
+            echo "*Push aktivieren*, danach *Test senden*."
+          } >> "$GITHUB_STEP_SUMMARY"
