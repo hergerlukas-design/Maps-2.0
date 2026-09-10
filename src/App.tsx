@@ -230,8 +230,17 @@ export default function App() {
           thresholdKm={settings.rangeThresholdKm}
         />
       ) : (
-        <div className="absolute inset-0 flex flex-col">
-          <div className="pointer-events-none flex-1" />
+        /*
+          `pointer-events-none` am Container ist zwingend: Er liegt als
+          `absolute inset-0` über der gesamten Karte. Ohne die Angabe nimmt er
+          Eingaben an — auch dort, wo er nur leerer Platz über dem Planer ist.
+          Dass der Abstandhalter darin `pointer-events-none` trägt, genügt
+          nicht: Die Eingabe geht durch das Kind hindurch und landet auf dem
+          Elternelement, das genauso groß ist. Zoomen und Ziehen der Karte
+          wären damit auf dem Planer-Bildschirm vollständig tot.
+        */
+        <div className="pointer-events-none absolute inset-0 flex flex-col">
+          <div className="flex-1" />
           <div
             className={`pointer-events-auto overflow-hidden rounded-t-[var(--radius-sheet)] bg-ink-950/95 backdrop-blur-xl transition-[max-height] duration-300 ${
               plannerCollapsed ? 'max-h-40' : 'max-h-[85%]'

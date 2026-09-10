@@ -36,7 +36,7 @@ export type SettingsRow = {
   search_radius_km: number;
   re_ask_interval_km: number;
   max_suggestions: number;
-  detour_cost_per_km: number;
+  detour_penalty_ct_per_km: number;
   min_charging_power_kw: number;
   voice_guidance: boolean;
   keep_screen_awake: boolean;

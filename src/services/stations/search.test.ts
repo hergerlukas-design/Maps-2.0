@@ -48,7 +48,9 @@ function chargingStop(
 const BASE = {
   progressM: 0,
   maxOffsetM: 15_000,
-  detourCostPerKm: 0.18,
+  // 0,5 ct/l je Umwegkilometer: Eine Tankstelle 10 km abseits muss mindestens
+  // 5 ct/l günstiger sein, um zu gewinnen.
+  detourPenaltyCtPerKm: 0.5,
   fuel: 'e10' as const,
 };
 
@@ -88,17 +90,35 @@ describe('rankStops', () => {
     expect(ranked[0]?.stop.id).toBe('guenstig');
   });
 
-  it('charges the detour against the price, so a big detour loses', () => {
+  it('lässt einen großen Umweg verlieren, wenn die Ersparnis klein ist', () => {
+    // 8 km abseits ergeben ~20,8 km Umweg, also gut 10 ct/l Aufschlag.
+    // Eine Ersparnis von 5 ct/l trägt das nicht.
     const ranked = rankStops(
       line,
       [
-        // 8 km off route: ~20.8 km of detour at 0.18 €/km ≈ 3.74 € added.
-        fuelStop('billig-weit', 8.05, 8000, { e10: 1.699 }),
+        fuelStop('billig-weit', 8.05, 8000, { e10: 1.749 }),
         fuelStop('teurer-nah', 8.06, 30, { e10: 1.799 }),
       ],
       BASE,
     );
     expect(ranked[0]?.stop.id).toBe('teurer-nah');
+  });
+
+  it('lässt einen großen Umweg gewinnen, wenn die Ersparnis groß genug ist', () => {
+    // Derselbe Umweg, aber 20 ct/l günstiger — das lohnt sich.
+    //
+    // Genau dieser Fall war vorher unmöglich: Der Aufschlag wurde in Euro auf
+    // einen Preis pro Liter addiert, wodurch jeder nennenswerte Umweg jede
+    // Preisersparnis überstimmte.
+    const ranked = rankStops(
+      line,
+      [
+        fuelStop('billig-weit', 8.05, 8000, { e10: 1.599 }),
+        fuelStop('teurer-nah', 8.06, 30, { e10: 1.799 }),
+      ],
+      BASE,
+    );
+    expect(ranked[0]?.stop.id).toBe('billig-weit');
   });
 
   it('keeps the cheap station when the detour is small enough to pay off', () => {
@@ -111,6 +131,18 @@ describe('rankStops', () => {
       BASE,
     );
     expect(ranked[0]?.stop.id).toBe('billig-nah');
+  });
+
+  it('ignoriert den Umweg vollständig, wenn der Aufschlag auf 0 steht', () => {
+    const ranked = rankStops(
+      line,
+      [
+        fuelStop('billig-sehr-weit', 8.05, 12_000, { e10: 1.749 }),
+        fuelStop('teurer-nah', 8.06, 30, { e10: 1.799 }),
+      ],
+      { ...BASE, detourPenaltyCtPerKm: 0 },
+    );
+    expect(ranked[0]?.stop.id).toBe('billig-sehr-weit');
   });
 
   it('ranks stations without a reported price last but still lists them', () => {

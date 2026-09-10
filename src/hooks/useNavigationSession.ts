@@ -254,7 +254,7 @@ export function useNavigationSession({
           rankStops(current.line, collected, {
             progressM,
             maxOffsetM: radiusKm * 1000,
-            detourCostPerKm: currentSettings.detourCostPerKm,
+            detourPenaltyCtPerKm: currentSettings.detourPenaltyCtPerKm,
             fuel: currentVehicle.fuel ?? 'e10',
             minPowerKw: currentSettings.minChargingPowerKw,
             maxAheadM: window.toM - progressM,

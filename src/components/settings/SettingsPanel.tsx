@@ -116,15 +116,21 @@ export function SettingsPanel({
           />
 
           <SliderField
-            label="Umwegkosten"
-            value={settings.detourCostPerKm}
-            min={SETTINGS_BOUNDS.detourCostPerKm.min}
-            max={SETTINGS_BOUNDS.detourCostPerKm.max}
-            step={SETTINGS_BOUNDS.detourCostPerKm.step}
-            unit="€/km"
-            format={(value) => value.toFixed(2)}
-            hint="Ein Umweg-Kilometer wird mit diesem Betrag auf den Literpreis aufgeschlagen. Höher = die App bleibt lieber an der Route."
-            onChange={(detourCostPerKm) => onChange({ detourCostPerKm })}
+            label="Umweg lohnt sich ab"
+            value={settings.detourPenaltyCtPerKm}
+            min={SETTINGS_BOUNDS.detourPenaltyCtPerKm.min}
+            max={SETTINGS_BOUNDS.detourPenaltyCtPerKm.max}
+            step={SETTINGS_BOUNDS.detourPenaltyCtPerKm.step}
+            unit="ct/l je km"
+            format={(value) => value.toFixed(1).replace('.', ',')}
+            hint={
+              settings.detourPenaltyCtPerKm === 0
+                ? 'Bei 0 zählt nur der Preis — auch eine Tankstelle weit abseits der Route kann gewinnen.'
+                : `Aktuell: Eine Tankstelle 10 km abseits muss mindestens ` +
+                  `${(settings.detourPenaltyCtPerKm * 10).toFixed(1).replace('.', ',')} ct/l ` +
+                  `günstiger sein als eine direkt an der Route. Höher = die App bleibt lieber an der Route.`
+            }
+            onChange={(detourPenaltyCtPerKm) => onChange({ detourPenaltyCtPerKm })}
           />
 
           <SliderField

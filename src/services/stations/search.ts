@@ -177,8 +177,8 @@ export interface RankOptions {
   maxAheadM?: number;
   /** Ignore stops further than this from the route. */
   maxOffsetM: number;
-  /** EUR per detour kilometre, used to price the detour against fuel savings. */
-  detourCostPerKm: number;
+  /** Cent pro Liter, die ein Kilometer Umweg wert sein muss. */
+  detourPenaltyCtPerKm: number;
   /** Which grade's price to rank fuel stops by. */
   fuel?: FuelKind;
   /** Only used for charging stops. */
@@ -230,10 +230,11 @@ function priceOf(stop: FuelStop, fuel: FuelKind): number | null {
 /**
  * Scores a stop; lower is better.
  *
- * For fuel we convert the detour into money (`detourCostPerKm`) and add it to
- * the litre price, so a station 8 km off the route has to be genuinely cheaper
- * to win. For chargers, power is what matters, so a high-power stop tolerates a
- * longer detour. Amenities are ranked purely by how soon you reach them.
+ * Bei Kraftstoff wird der Umweg in einen Aufschlag pro Liter umgerechnet und
+ * auf den Literpreis addiert — beide Größen also in €/Liter, damit der
+ * Vergleich überhaupt trägt. Bei Ladesäulen zählt die Leistung, weshalb dort
+ * ein längerer Umweg tolerierbar ist. Rastplätze und Toiletten werden allein
+ * danach sortiert, wie bald man sie erreicht.
  */
 function scoreStop(
   stop: Stop,
@@ -249,12 +250,15 @@ function scoreStop(
       // Sorts after every station that does report a price, but stays visible.
       return { score: 100 + detourKm, note: 'Kein Preis gemeldet' };
     }
-    const detourCost = detourKm * options.detourCostPerKm;
+    // Beides in €/Liter, damit die Größen vergleichbar sind. Ein Aufschlag in
+    // Euro auf einen Preis pro Liter wäre einheitenfalsch — und würde den
+    // Umweg jede Preisersparnis überstimmen lassen.
+    const penaltyPerLitre = (detourKm * options.detourPenaltyCtPerKm) / 100;
     return {
-      score: price + detourCost,
+      score: price + penaltyPerLitre,
       note:
-        detourCost >= 0.005
-          ? `${formatEuro(price, 3)} €/l + ${formatEuro(detourCost, 2)} € Umweg`
+        penaltyPerLitre >= 0.0005
+          ? `${formatEuro(price, 3)} €/l · +${formatEuro(penaltyPerLitre, 3)} €/l für ${formatEuro(detourKm, 1)} km Umweg`
           : `${formatEuro(price, 3)} €/l, praktisch kein Umweg`,
     };
   }

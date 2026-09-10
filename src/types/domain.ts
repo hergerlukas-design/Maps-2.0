@@ -64,8 +64,13 @@ export interface Settings {
   reAskIntervalKm: number;
   /** Max number of stop suggestions shown in the prompt. */
   maxSuggestions: number;
-  /** Weight of a detour kilometre when ranking fuel stops, in EUR/km. */
-  detourCostPerKm: number;
+  /**
+   * Wie viel Ersparnis ein Kilometer Umweg wert sein muss, in Cent pro Liter.
+   *
+   * Bei 0,5 muss eine Tankstelle 10 km abseits der Route mindestens 5 ct/l
+   * günstiger sein, um vor einer Tankstelle direkt an der Route zu landen.
+   */
+  detourPenaltyCtPerKm: number;
   /** Prefer chargers with at least this power (kW); 0 disables the filter. */
   minChargingPowerKw: number;
   /** Speak turn instructions out loud. */
@@ -84,7 +89,10 @@ export const DEFAULT_SETTINGS: Settings = {
   searchRadiusKm: 12,
   reAskIntervalKm: 50,
   maxSuggestions: 6,
-  detourCostPerKm: 0.18,
+  // Grobe Herleitung: ~0,30 € Fahrzeugkosten je Umwegkilometer, verteilt auf
+  // eine Tankfüllung von ~45 Litern, ergibt rund 0,7 ct/l je Kilometer. Etwas
+  // darunter angesetzt, weil der Umweg auch Zeit kostet, die hier nicht zählt.
+  detourPenaltyCtPerKm: 0.5,
   minChargingPowerKw: 50,
   voiceGuidance: true,
   keepScreenAwake: true,
@@ -99,7 +107,7 @@ export const SETTINGS_BOUNDS = {
   searchRadiusKm: { min: 1, max: 25, step: 1 },
   reAskIntervalKm: { min: 5, max: 200, step: 5 },
   maxSuggestions: { min: 3, max: 12, step: 1 },
-  detourCostPerKm: { min: 0, max: 1, step: 0.01 },
+  detourPenaltyCtPerKm: { min: 0, max: 5, step: 0.1 },
   minChargingPowerKw: { min: 0, max: 350, step: 10 },
 } as const;
 
@@ -143,11 +151,11 @@ export function clampSettings(input: Partial<Settings> | null | undefined): Sett
         DEFAULT_SETTINGS.maxSuggestions,
       ),
     ),
-    detourCostPerKm: clampNumber(
-      s.detourCostPerKm,
-      b.detourCostPerKm.min,
-      b.detourCostPerKm.max,
-      DEFAULT_SETTINGS.detourCostPerKm,
+    detourPenaltyCtPerKm: clampNumber(
+      s.detourPenaltyCtPerKm,
+      b.detourPenaltyCtPerKm.min,
+      b.detourPenaltyCtPerKm.max,
+      DEFAULT_SETTINGS.detourPenaltyCtPerKm,
     ),
     minChargingPowerKw: clampNumber(
       s.minChargingPowerKw,
