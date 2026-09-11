@@ -68,14 +68,27 @@
     height: 100%;
   }
 
+  /*
+    `overscroll-behavior` muss auf `html` stehen, nicht nur auf `body`: Nur die
+    Angabe am Wurzelelement wirkt auf den Viewport. Andernfalls löst das
+    Herunterziehen unter Android das Neuladen der Seite aus — mitten in der
+    Navigation wäre die gesamte Fahrt verloren.
+  */
+  html {
+    overscroll-behavior: none;
+  }
+
   body {
     margin: 0;
     background-color: var(--color-ink-950);
     color: var(--color-ink-100);
     font-family: var(--font-sans);
-    /* A driver's thumb should never rubber-band the whole app. */
     overscroll-behavior: none;
     -webkit-tap-highlight-color: transparent;
+    /* Die App ist bildschirmfüllend; der Body selbst scrollt nie. */
+    overflow: hidden;
+    position: fixed;
+    inset: 0;
   }
 
   /* Numbers that update continuously must not shift their neighbours. */
@@ -110,6 +123,15 @@
     backdrop-filter: blur(16px) saturate(140%);
     border: 1px solid color-mix(in oklab, var(--color-ink-600) 60%, transparent);
     box-shadow: var(--shadow-panel);
+  }
+
+  /*
+    Ein Scrollbereich, der am Anfang oder Ende angekommen ist, gibt die Geste
+    sonst an den Viewport weiter — und dort löst sie wieder das Neuladen aus.
+  */
+  .overflow-y-auto,
+  .overflow-y-scroll {
+    overscroll-behavior-y: contain;
   }
 
   /* Minimum 44 px touch target: this is used while driving. */

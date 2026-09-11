@@ -12,19 +12,6 @@ createRoot(container).render(
   </StrictMode>,
 );
 
-/**
- * Service worker registration.
- *
- * Registered after `load` so it never competes with the first paint, and only
- * in production: in dev the worker would cache the module graph Vite is busy
- * hot-reloading.
- */
-if ('serviceWorker' in navigator && import.meta.env.PROD) {
-  window.addEventListener('load', () => {
-    void navigator.serviceWorker
-      .register('/sw.js', { scope: '/' })
-      .catch((error: unknown) => {
-        console.warn('[pwa] Service Worker konnte nicht registriert werden:', error);
-      });
-  });
-}
+// Der Service Worker wird in `useAppUpdate` registriert — dort, wo auch das
+// Erkennen neuer Fassungen sitzt. Zwei Registrierungsstellen wären eine
+// Fehlerquelle ohne Gegenwert.

@@ -11,6 +11,7 @@ import { useGeolocation } from '@/hooks/useGeolocation';
 import { useWakeLock } from '@/hooks/useWakeLock';
 import { useVoice } from '@/hooks/useVoice';
 import { useNavigationSession } from '@/hooks/useNavigationSession';
+import { useAppUpdate } from '@/hooks/useAppUpdate';
 import { MapView, type CameraMode } from '@/components/map/MapView';
 import { ManeuverBanner } from '@/components/nav/ManeuverBanner';
 import { NavBottomBar } from '@/components/nav/NavBottomBar';
@@ -20,6 +21,7 @@ import { SearchBar } from '@/components/planner/SearchBar';
 import { TripSheet } from '@/components/planner/TripSheet';
 import { SettingsPanel } from '@/components/settings/SettingsPanel';
 import { AccountPanel } from '@/components/auth/AccountPanel';
+import { UpdateBanner } from '@/components/ui/UpdateBanner';
 
 export default function App() {
   const settings = useAppStore((state) => state.settings);
@@ -51,6 +53,7 @@ export default function App() {
 
   const geo = useGeolocation();
   const voice = useVoice(settings.voiceGuidance);
+  const update = useAppUpdate();
 
   /* ---------------------------------------------------------------- *
    * Auth
@@ -238,6 +241,8 @@ export default function App() {
           geoStatus={geo.status}
           geoError={geo.error}
           geoStaleForS={geo.staleForS}
+          updateReady={update.updateReady}
+          onDismissUpdate={update.dismiss}
           onEnd={endNavigation}
           onOpenSettings={() => setSettingsOpen(true)}
           onHighlight={setHighlightedStopId}
@@ -268,6 +273,16 @@ export default function App() {
             }}
             onOpenSettings={() => setSettingsOpen(true)}
           />
+
+          {update.updateReady && (
+            <div className="mt-2">
+              <UpdateBanner
+                navigating={false}
+                onApply={update.applyUpdate}
+                onDismiss={update.dismiss}
+              />
+            </div>
+          )}
 
           <div className="flex-1" />
 
@@ -350,6 +365,8 @@ interface NavigatingLayerProps {
   geoStatus: ReturnType<typeof useGeolocation>['status'];
   geoError: string | null;
   geoStaleForS: number;
+  updateReady: boolean;
+  onDismissUpdate: () => void;
   onEnd: () => void;
   onOpenSettings: () => void;
   onHighlight: (id: string | null) => void;
@@ -367,6 +384,8 @@ function NavigatingLayer({
   geoStatus,
   geoError,
   geoStaleForS,
+  updateReady,
+  onDismissUpdate,
   onEnd,
   onOpenSettings,
   onHighlight,
@@ -394,6 +413,16 @@ function NavigatingLayer({
           <p className="panel mt-2 rounded-2xl px-3 py-2 text-xs text-warn-500">
             {geoError ?? `Kein GPS-Signal seit ${geoStaleForS} s — Position kann veraltet sein.`}
           </p>
+        )}
+
+        {updateReady && (
+          <div className="-mx-3 mt-2">
+            <UpdateBanner
+              navigating
+              onApply={() => {}}
+              onDismiss={onDismissUpdate}
+            />
+          </div>
         )}
 
         {session.notice && (
