@@ -106,8 +106,6 @@ export function MapView({
   const [ready, setReady] = useState(false);
   const themeRef = useRef(theme);
   themeRef.current = theme;
-  /** Unterscheidet den ersten Stil vom Wechsel, damit nichts doppelt entsteht. */
-  const styleSwitchedRef = useRef(false);
   const appliedStyleRef = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const cameraModeRef = useRef(cameraMode);
@@ -135,9 +133,15 @@ export function MapView({
     }
 
     mapboxgl.accessToken = env.mapboxToken!;
+    const initialStyle = theme === 'dark' ? env.mapboxStyle : env.mapboxStyleDay;
+    // Unbedingt merken: Ohne das hielte der Effekt weiter unten den
+    // Anfangsstil für „noch nicht gesetzt", riefe `setStyle` mit demselben
+    // Stil auf und legte die Karte still — Mapbox meldet bei identischem Stil
+    // kein `style.load`, und `ready` bliebe für immer false.
+    appliedStyleRef.current = initialStyle;
     const map = new mapboxgl.Map({
       container: containerRef.current,
-      style: theme === 'dark' ? env.mapboxStyle : env.mapboxStyleDay,
+      style: initialStyle,
       center: [10.4515, 51.1657], // Geographic centre of Germany.
       zoom: 5.4,
       pitch: 0,
@@ -168,6 +172,10 @@ export function MapView({
      * angelegt werden, sonst verschwinden Route und Marker.
      */
     const installLayers = (colours: (typeof MAP_COLOURS)[MapTheme]) => {
+      // Nach einem Stilwechsel sind die Quellen weg; ein doppelter Aufruf darf
+      // aber trotzdem nicht mit „source already exists" abbrechen.
+      if (map.getSource(SOURCE_ROUTE)) return;
+
       map.addSource(SOURCE_ROUTE, { type: 'geojson', data: emptyCollection() });
       map.addSource(SOURCE_DRIVEN, { type: 'geojson', data: emptyCollection() });
       map.addSource(SOURCE_STOPS, { type: 'geojson', data: emptyCollection() });
@@ -250,42 +258,42 @@ export function MapView({
         },
       });
 
-      map.on('click', 'stop-circles', (event) => {
-        // Mapbox types queried features without their properties bag, so the
-        // JSON payload attached above has to be read through a narrow cast.
-        const feature = event.features?.[0] as
-          | { properties?: Record<string, unknown> }
-          | undefined;
-        const raw = feature?.properties?.['stop'];
-        if (typeof raw !== 'string') return;
-        try {
-          onStopClick?.(JSON.parse(raw) as Stop);
-        } catch {
-          // A malformed property is not worth crashing the map over.
-        }
-      });
-      map.on('mouseenter', 'stop-circles', () => {
-        map.getCanvas().style.cursor = 'pointer';
-      });
-      map.on('mouseleave', 'stop-circles', () => {
-        map.getCanvas().style.cursor = '';
-      });
     };
 
-    map.on('load', () => {
-      installLayers(MAP_COLOURS[themeRef.current]);
-      setReady(true);
+    /*
+     * Ereignisse für die Stopp-Ebene werden genau einmal registriert, nicht in
+     * `installLayers`: Sie hängen am Kartenobjekt, nicht am Stil, und
+     * überstehen einen Stilwechsel. In `installLayers` würden sie sich mit
+     * jedem Wechsel vervielfachen.
+     */
+    map.on('click', 'stop-circles', (event) => {
+      // Mapbox types queried features without their properties bag, so the
+      // JSON payload attached above has to be read through a narrow cast.
+      const feature = event.features?.[0] as
+        | { properties?: Record<string, unknown> }
+        | undefined;
+      const raw = feature?.properties?.['stop'];
+      if (typeof raw !== 'string') return;
+      try {
+        onStopClick?.(JSON.parse(raw) as Stop);
+      } catch {
+        // A malformed property is not worth crashing the map over.
+      }
+    });
+    map.on('mouseenter', 'stop-circles', () => {
+      map.getCanvas().style.cursor = 'pointer';
+    });
+    map.on('mouseleave', 'stop-circles', () => {
+      map.getCanvas().style.cursor = '';
     });
 
     /*
-     * Nach einem Stilwechsel liefert Mapbox `style.load`. Erst `ready` auf
-     * false und danach wieder auf true zu setzen, lässt alle Effekte, die die
-     * Daten in die Quellen schreiben, erneut laufen — die Route ist damit
-     * sofort wieder da, ohne dass es dafür eigenen Code bräuchte.
+     * `style.load` feuert beim ersten Laden UND nach jedem Stilwechsel. Eine
+     * einzige Stelle für das Anlegen der Ebenen ist deshalb ausreichend — und
+     * verlässlicher als ein zusätzliches `load` mit einem Merker, welcher der
+     * beiden Fälle gerade vorliegt.
      */
     map.on('style.load', () => {
-      if (!styleSwitchedRef.current) return;
-      styleSwitchedRef.current = false;
       installLayers(MAP_COLOURS[themeRef.current]);
       setReady(true);
     });
@@ -333,16 +341,18 @@ export function MapView({
   // Kartenstil dem Thema folgen lassen.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !ready) return;
+    if (!map) return;
     const wanted = theme === 'dark' ? env.mapboxStyle : env.mapboxStyleDay;
-    // `getStyle().sprite` ist kein verlässlicher Vergleichswert; deshalb wird
-    // der zuletzt gesetzte Stil selbst gemerkt.
+    // Der zuletzt gesetzte Stil wird selbst gemerkt; `getStyle()` taugt nicht
+    // als Vergleichswert, weil Mapbox dort die aufgelöste Fassung liefert.
     if (appliedStyleRef.current === wanted) return;
     appliedStyleRef.current = wanted;
-    styleSwitchedRef.current = true;
+    // `ready` kurz zurücknehmen: Nach `style.load` laufen damit alle Effekte
+    // erneut, die Daten in die Quellen schreiben, und die Route ist sofort
+    // wieder da, ohne eigenen Wiederherstellungs-Code.
     setReady(false);
     map.setStyle(wanted);
-  }, [theme, ready]);
+  }, [theme]);
 
   /* ---------------------------------------------------------------- *
    * Route geometry
