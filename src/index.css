@@ -12,6 +12,15 @@
  * ordinary UI.
  */
 @theme {
+  /*
+    Die Marken- und Flächenfarben stehen hier als Standard (dunkel). Das helle
+    Thema überschreibt dieselben Variablen weiter unten — Tailwind gibt sie als
+    CSS-Variablen aus, sodass ein Wechsel zur Laufzeit greift.
+
+    Die `ink`-Skala meint Rollen, nicht Helligkeiten: 950 ist immer der tiefste
+    Hintergrund, 100 immer der stärkste Text. Im hellen Thema kehrt sich die
+    Skala deshalb um.
+  */
   --color-ink-950: #05080f;
   --color-ink-900: #0b1120;
   --color-ink-850: #111a2e;
@@ -49,6 +58,51 @@
 
   --shadow-panel: 0 18px 48px -12px rgb(0 0 0 / 0.7);
   --shadow-banner: 0 10px 30px -8px rgb(0 0 0 / 0.6);
+}
+
+/*
+  Helles Thema.
+
+  Die Akzentfarben sind nicht dieselben: Das Cyan #22d3ee erreicht auf Weiß
+  nicht annähernd genug Kontrast. Hier stehen deshalb durchgängig dunklere
+  Töne derselben Farbfamilien.
+*/
+@layer base {
+  :root[data-theme='light'] {
+    color-scheme: light;
+
+    --color-ink-950: #f4f6fa;
+    --color-ink-900: #ffffff;
+    --color-ink-850: #f0f3f8;
+    --color-ink-800: #e4eaf3;
+    --color-ink-700: #d3dbe8;
+    --color-ink-600: #b6c2d6;
+    --color-ink-500: #8593ab;
+    --color-ink-400: #56637b;
+    --color-ink-300: #3b4759;
+    --color-ink-200: #24303f;
+    --color-ink-100: #0d1622;
+
+    --color-route-500: #0e7490;
+    --color-route-600: #155e75;
+    --color-route-driven: #9aa8bd;
+
+    --color-go-500: #047857;
+    --color-go-600: #065f46;
+
+    --color-warn-500: #b45309;
+    --color-warn-600: #92400e;
+
+    --color-alert-500: #b91c1c;
+    --color-alert-600: #991b1b;
+
+    --color-charge-500: #6d28d9;
+    --color-charge-600: #5b21b6;
+
+    /* Auf hellem Grund trägt ein weicher, flacher Schatten. */
+    --shadow-panel: 0 12px 32px -12px rgb(15 23 42 / 0.22);
+    --shadow-banner: 0 8px 22px -8px rgb(15 23 42 / 0.18);
+  }
 }
 
 @layer base {

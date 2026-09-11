@@ -26,6 +26,7 @@ export interface MapViewProps {
   cameraMode: CameraMode;
   onCameraModeChange: (mode: CameraMode) => void;
   onStopClick?: (stop: Stop) => void;
+  theme: MapTheme;
 }
 
 const SOURCE_ROUTE = 'route';
@@ -33,12 +34,41 @@ const SOURCE_DRIVEN = 'route-driven';
 const SOURCE_STOPS = 'stops';
 const SOURCE_WAYPOINTS = 'waypoints';
 
-const STOP_COLOURS: Record<string, string> = {
-  fuel: '#34d399',
-  charging: '#a78bfa',
-  rest_area: '#fbbf24',
-  toilets: '#7688ad',
-};
+/**
+ * Kartenfarben je Thema.
+ *
+ * Die Werte der Oberfläche stehen als CSS-Variablen zur Verfügung, die
+ * Mapbox-Paint-Eigenschaften brauchen aber feste Farben. Sie hier zu
+ * verdoppeln ist der Preis dafür — dafür lassen sie sich für die Karte eigens
+ * abstimmen: Auf hellem Kartengrund trägt ein kräftigeres Cyan als in der
+ * Oberfläche, und die gefahrene Strecke muss sich deutlicher absetzen.
+ */
+const MAP_COLOURS = {
+  dark: {
+    route: '#22d3ee',
+    routeCasing: '#083344',
+    driven: '#334666',
+    label: '#e6ecf6',
+    labelHalo: '#05080f',
+    markerStroke: '#05080f',
+    origin: '#34d399',
+    destination: '#f87171',
+    stops: { fuel: '#34d399', charging: '#a78bfa', rest_area: '#fbbf24', toilets: '#7688ad' },
+  },
+  light: {
+    route: '#0891b2',
+    routeCasing: '#ffffff',
+    driven: '#94a3b8',
+    label: '#0d1622',
+    labelHalo: '#ffffff',
+    markerStroke: '#ffffff',
+    origin: '#047857',
+    destination: '#b91c1c',
+    stops: { fuel: '#047857', charging: '#6d28d9', rest_area: '#b45309', toilets: '#56637b' },
+  },
+} as const;
+
+export type MapTheme = keyof typeof MAP_COLOURS;
 
 function emptyCollection(): GeoJSON.FeatureCollection {
   return { type: 'FeatureCollection', features: [] };
@@ -68,11 +98,17 @@ export function MapView({
   cameraMode,
   onCameraModeChange,
   onStopClick,
+  theme,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const puckRef = useRef<mapboxgl.Marker | null>(null);
   const [ready, setReady] = useState(false);
+  const themeRef = useRef(theme);
+  themeRef.current = theme;
+  /** Unterscheidet den ersten Stil vom Wechsel, damit nichts doppelt entsteht. */
+  const styleSwitchedRef = useRef(false);
+  const appliedStyleRef = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const cameraModeRef = useRef(cameraMode);
   cameraModeRef.current = cameraMode;
@@ -101,7 +137,7 @@ export function MapView({
     mapboxgl.accessToken = env.mapboxToken!;
     const map = new mapboxgl.Map({
       container: containerRef.current,
-      style: env.mapboxStyle,
+      style: theme === 'dark' ? env.mapboxStyle : env.mapboxStyleDay,
       center: [10.4515, 51.1657], // Geographic centre of Germany.
       zoom: 5.4,
       pitch: 0,
@@ -124,7 +160,14 @@ export function MapView({
       'top-right',
     );
 
-    map.on('load', () => {
+    /**
+     * Legt Quellen, Ebenen und Ereignisse an.
+     *
+     * Bewusst als eigene Funktion: `setStyle` beim Themenwechsel verwirft
+     * sämtliche eigenen Quellen und Ebenen. Sie müssen danach vollständig neu
+     * angelegt werden, sonst verschwinden Route und Marker.
+     */
+    const installLayers = (colours: (typeof MAP_COLOURS)[MapTheme]) => {
       map.addSource(SOURCE_ROUTE, { type: 'geojson', data: emptyCollection() });
       map.addSource(SOURCE_DRIVEN, { type: 'geojson', data: emptyCollection() });
       map.addSource(SOURCE_STOPS, { type: 'geojson', data: emptyCollection() });
@@ -138,7 +181,7 @@ export function MapView({
         source: SOURCE_ROUTE,
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-          'line-color': '#083344',
+          'line-color': colours.routeCasing,
           'line-width': ['interpolate', ['linear'], ['zoom'], 6, 6, 12, 14, 16, 22],
           'line-opacity': 0.9,
         },
@@ -149,7 +192,7 @@ export function MapView({
         source: SOURCE_ROUTE,
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-          'line-color': '#22d3ee',
+          'line-color': colours.route,
           'line-width': ['interpolate', ['linear'], ['zoom'], 6, 3, 12, 8, 16, 14],
         },
       });
@@ -160,7 +203,7 @@ export function MapView({
         source: SOURCE_DRIVEN,
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-          'line-color': '#334666',
+          'line-color': colours.driven,
           'line-width': ['interpolate', ['linear'], ['zoom'], 6, 3, 12, 8, 16, 14],
         },
       });
@@ -173,7 +216,7 @@ export function MapView({
           'circle-radius': 7,
           'circle-color': ['get', 'colour'],
           'circle-stroke-width': 2.5,
-          'circle-stroke-color': '#05080f',
+          'circle-stroke-color': colours.markerStroke,
         },
       });
 
@@ -186,7 +229,7 @@ export function MapView({
           'circle-color': ['get', 'colour'],
           'circle-opacity': 0.95,
           'circle-stroke-width': 2,
-          'circle-stroke-color': '#05080f',
+          'circle-stroke-color': colours.markerStroke,
         },
       });
       map.addLayer({
@@ -201,8 +244,8 @@ export function MapView({
           'text-allow-overlap': false,
         },
         paint: {
-          'text-color': '#e6ecf6',
-          'text-halo-color': '#05080f',
+          'text-color': colours.label,
+          'text-halo-color': colours.labelHalo,
           'text-halo-width': 1.4,
         },
       });
@@ -227,7 +270,23 @@ export function MapView({
       map.on('mouseleave', 'stop-circles', () => {
         map.getCanvas().style.cursor = '';
       });
+    };
 
+    map.on('load', () => {
+      installLayers(MAP_COLOURS[themeRef.current]);
+      setReady(true);
+    });
+
+    /*
+     * Nach einem Stilwechsel liefert Mapbox `style.load`. Erst `ready` auf
+     * false und danach wieder auf true zu setzen, lässt alle Effekte, die die
+     * Daten in die Quellen schreiben, erneut laufen — die Route ist damit
+     * sofort wieder da, ohne dass es dafür eigenen Code bräuchte.
+     */
+    map.on('style.load', () => {
+      if (!styleSwitchedRef.current) return;
+      styleSwitchedRef.current = false;
+      installLayers(MAP_COLOURS[themeRef.current]);
       setReady(true);
     });
 
@@ -271,6 +330,20 @@ export function MapView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Kartenstil dem Thema folgen lassen.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const wanted = theme === 'dark' ? env.mapboxStyle : env.mapboxStyleDay;
+    // `getStyle().sprite` ist kein verlässlicher Vergleichswert; deshalb wird
+    // der zuletzt gesetzte Stil selbst gemerkt.
+    if (appliedStyleRef.current === wanted) return;
+    appliedStyleRef.current = wanted;
+    styleSwitchedRef.current = true;
+    setReady(false);
+    map.setStyle(wanted);
+  }, [theme, ready]);
+
   /* ---------------------------------------------------------------- *
    * Route geometry
    * ---------------------------------------------------------------- */
@@ -305,6 +378,8 @@ export function MapView({
    * Markers
    * ---------------------------------------------------------------- */
 
+  const colours = MAP_COLOURS[theme];
+
   const stopFeatures = useMemo<GeoJSON.FeatureCollection>(
     () => ({
       type: 'FeatureCollection',
@@ -312,7 +387,7 @@ export function MapView({
         type: 'Feature' as const,
         properties: {
           label: ranked.stop.name,
-          colour: STOP_COLOURS[ranked.stop.kind] ?? '#22d3ee',
+          colour: colours.stops[ranked.stop.kind] ?? colours.route,
           highlighted: ranked.stop.id === highlightedStopId,
           stop: JSON.stringify(ranked.stop),
         },
@@ -322,7 +397,7 @@ export function MapView({
         },
       })),
     }),
-    [candidates, highlightedStopId],
+    [candidates, highlightedStopId, colours],
   );
 
   useEffect(() => {
@@ -343,15 +418,15 @@ export function MapView({
         properties: {
           colour:
             waypoint.kind === 'destination'
-              ? '#f87171'
+              ? colours.destination
               : waypoint.kind === 'origin'
-                ? '#34d399'
-                : (STOP_COLOURS[waypoint.kind] ?? '#22d3ee'),
+                ? colours.origin
+                : (colours.stops[waypoint.kind] ?? colours.route),
         },
         geometry: { type: 'Point' as const, coordinates: toPosition(waypoint.location) },
       })),
     });
-  }, [waypoints, ready]);
+  }, [waypoints, ready, colours]);
 
   /* ---------------------------------------------------------------- *
    * The puck
@@ -372,9 +447,9 @@ export function MapView({
       element.className = 'nav-puck';
       element.innerHTML = `
         <svg viewBox="0 0 40 40" width="40" height="40" aria-hidden="true">
-          <circle cx="20" cy="20" r="17" fill="#22d3ee" fill-opacity="0.18" />
-          <circle cx="20" cy="20" r="11" fill="#0b1120" stroke="#22d3ee" stroke-width="2.5" />
-          <path d="M20 10 L26 24 L20 21 L14 24 Z" fill="#22d3ee" />
+          <circle cx="20" cy="20" r="17" fill="${colours.route}" fill-opacity="0.18" />
+          <circle cx="20" cy="20" r="11" fill="${colours.labelHalo}" stroke="${colours.route}" stroke-width="2.5" />
+          <path d="M20 10 L26 24 L20 21 L14 24 Z" fill="${colours.route}" />
         </svg>`;
       puckRef.current = new mapboxgl.Marker({
         element,
@@ -387,7 +462,7 @@ export function MapView({
 
     puckRef.current.setLngLat(nav.snapped);
     puckRef.current.setRotation(nav.courseDeg);
-  }, [nav, ready]);
+  }, [nav, ready, colours]);
 
   /* ---------------------------------------------------------------- *
    * Camera

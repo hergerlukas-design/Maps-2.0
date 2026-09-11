@@ -12,6 +12,7 @@ import { useWakeLock } from '@/hooks/useWakeLock';
 import { useVoice } from '@/hooks/useVoice';
 import { useNavigationSession } from '@/hooks/useNavigationSession';
 import { useAppUpdate } from '@/hooks/useAppUpdate';
+import { useTheme } from '@/hooks/useTheme';
 import { MapView, type CameraMode } from '@/components/map/MapView';
 import { ManeuverBanner } from '@/components/nav/ManeuverBanner';
 import { NavBottomBar } from '@/components/nav/NavBottomBar';
@@ -63,6 +64,7 @@ export default function App() {
   const geo = useGeolocation();
   const voice = useVoice(settings.voiceGuidance);
   const update = useAppUpdate();
+  const theme = useTheme();
 
   /* ---------------------------------------------------------------- *
    * Auth
@@ -260,6 +262,7 @@ export default function App() {
         cameraMode={cameraMode}
         onCameraModeChange={setCameraMode}
         onStopClick={(stop) => setHighlightedStopId(stop.id)}
+        theme={theme.resolved}
       />
 
       {navigating ? (
@@ -371,6 +374,8 @@ export default function App() {
         onChange={updateSettings}
         onReset={resetSettings}
         onClose={() => setSettingsOpen(false)}
+        themePreference={theme.preference}
+        onThemeChange={theme.setPreference}
       />
 
       <AccountPanel

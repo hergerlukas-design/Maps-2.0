@@ -10,6 +10,7 @@ import {
   sendTestPush,
   subscribeToPush,
 } from '@/services/push';
+import type { ThemePreference } from '@/hooks/useTheme';
 import { SliderField, ToggleField } from '@/components/ui/Field';
 import { Sheet } from '@/components/ui/Sheet';
 
@@ -22,6 +23,8 @@ interface SettingsPanelProps {
   onChange: (patch: Partial<Settings>) => void;
   onReset: () => void;
   onClose: () => void;
+  themePreference: ThemePreference;
+  onThemeChange: (value: ThemePreference) => void;
 }
 
 /**
@@ -40,6 +43,8 @@ export function SettingsPanel({
   onChange,
   onReset,
   onClose,
+  themePreference,
+  onThemeChange,
 }: SettingsPanelProps) {
   const [capabilities, setCapabilities] = useState<CapabilitiesResponse | null>(null);
   const [pushMessage, setPushMessage] = useState<string | null>(null);
@@ -143,6 +148,42 @@ export function SettingsPanel({
             hint="0 zeigt auch langsame Ladepunkte. Gilt nur für E-Auto und Hybrid."
             onChange={(minChargingPowerKw) => onChange({ minChargingPowerKw })}
           />
+        </section>
+
+        {/* Darstellung ------------------------------------------------ */}
+        <section className="space-y-3 border-t border-ink-700/70 pt-5">
+          <SectionHeading
+            title="Darstellung"
+            description="Gilt für Oberfläche und Karte."
+          />
+          <div className="flex gap-1.5 rounded-xl bg-ink-850 p-1">
+            {(
+              [
+                ['system', 'System'],
+                ['light', 'Hell'],
+                ['dark', 'Dunkel'],
+              ] as Array<[ThemePreference, string]>
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={themePreference === value}
+                onClick={() => onThemeChange(value)}
+                className={`touch-target flex-1 rounded-lg text-sm font-semibold transition-colors ${
+                  themePreference === value
+                    ? 'bg-ink-700 text-ink-100'
+                    : 'text-ink-400 active:text-ink-200'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs leading-snug text-ink-400">
+            „System" folgt der Einstellung des Geräts. Die Wahl gilt nur auf
+            diesem Gerät und wird nicht mit dem Konto abgeglichen — ob hell oder
+            dunkel passt, hängt an Gerät und Tageszeit.
+          </p>
         </section>
 
         {/* Driving --------------------------------------------------- */}
