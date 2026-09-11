@@ -2,9 +2,32 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LngLat } from '@shared/types';
 import type { PlaceRef } from '@/types/domain';
 import { searchPlaces } from '@/services/mapbox/geocoding';
+import { distanceM, toPosition } from '@/lib/geo';
 import { hasMapbox } from '@/config/env';
 
 const DEBOUNCE_MS = 280;
+
+/**
+ * Sortiert Treffer nach Luftlinie zum aktuellen Standort.
+ *
+ * Der `proximity`-Parameter von Mapbox ist nur eine Gewichtung, keine
+ * Sortierung: Bei einem Straßennamen, den es in mehreren Städten gibt, kann ein
+ * weit entfernter Treffer trotzdem oben stehen. In einer Navigations-App fährt
+ * man aber fast immer zu etwas in der Nähe, deshalb wird hier hart nach
+ * Entfernung sortiert.
+ *
+ * Ohne bekannten Standort bleibt die Reihenfolge von Mapbox unangetastet.
+ */
+function byDistance(places: PlaceRef[], from: LngLat | null): PlaceRef[] {
+  if (!from) return places;
+  const origin = toPosition(from);
+  return places
+    .map((place) => ({
+      ...place,
+      distanceM: distanceM(origin, toPosition(place.location)),
+    }))
+    .sort((a, b) => a.distanceM - b.distanceM);
+}
 
 export interface PlaceSearchState {
   query: string;
@@ -79,7 +102,7 @@ export function usePlaceSearch(proximity: LngLat | null): PlaceSearchState {
       searchPlaces(trimmed, { proximity, signal: controller.signal })
         .then((places) => {
           if (controller.signal.aborted) return;
-          setResults(places);
+          setResults(byDistance(places, proximity));
           setLoading(false);
           setError(places.length === 0 ? 'Keine Treffer.' : null);
         })

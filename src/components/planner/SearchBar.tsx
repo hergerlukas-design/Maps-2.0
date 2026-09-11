@@ -3,6 +3,7 @@ import type { LngLat } from '@shared/types';
 import type { PlaceRef } from '@/types/domain';
 import { hasMapbox } from '@/config/env';
 import { usePlaceSearch } from '@/hooks/usePlaceSearch';
+import { formatDistance } from '@/lib/format';
 
 interface SearchBarProps {
   /** Das gewählte Ziel, falls eines gesetzt ist. */
@@ -143,12 +144,19 @@ export function SearchBar({
                   <path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11Z" />
                   <circle cx="12" cy="10" r="2.5" />
                 </svg>
-                <span className="min-w-0">
+                <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm text-ink-100">{place.name}</span>
                   {place.address && (
                     <span className="block truncate text-xs text-ink-400">{place.address}</span>
                   )}
                 </span>
+                {/* Die Entfernung macht die Sortierung nachvollziehbar — sonst
+                    wirkt die Reihenfolge willkürlich. */}
+                {place.distanceM != null && (
+                  <span className="tabular shrink-0 pt-0.5 text-xs text-ink-400">
+                    {formatDistance(place.distanceM)}
+                  </span>
+                )}
               </button>
             </li>
           ))}

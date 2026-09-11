@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { StopKind } from '@shared/types';
+import type { LngLat, StopKind } from '@shared/types';
 import type { PlaceRef, StopWaypoint } from '@/types/domain';
 import { vehicleNeedsCharging, vehicleNeedsFuel } from '@/types/domain';
 import { hasSupabase } from '@/config/env';
@@ -49,6 +49,15 @@ export default function App() {
   const [highlightedStopId, setHighlightedStopId] = useState<string | null>(null);
   const [reachedStop, setReachedStop] = useState<StopWaypoint | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
+  /**
+   * Einmalig beim Start bestimmter Standort.
+   *
+   * Er dient allein dazu, die Adresssuche auf die Umgebung auszurichten. Ohne
+   * ihn liefert Mapbox global relevante Treffer — bei „Europaallee" stünden
+   * Zürich und Wien vor Hannover. Bewusst `getCurrentPosition` statt
+   * `watchPosition`: eine einzelne Abfrage, kein dauerndes Tracking.
+   */
+  const [initialFix, setInitialFix] = useState<LngLat | null>(null);
   const tripIdRef = useRef<string | null>(null);
 
   const geo = useGeolocation();
@@ -71,6 +80,25 @@ export default function App() {
       if (nextUser) void hydrateFromAccount(nextUser.id);
     });
   }, [setUser, setAuthReady, hydrateFromAccount]);
+
+  // Einmal beim Start den Standort bestimmen, damit die Suche ihn nutzen kann.
+  // Schlägt es fehl (keine Freigabe, kein Signal), bleibt die Reihenfolge die
+  // von Mapbox — die Suche funktioniert weiterhin.
+  const getCurrentFix = geo.getCurrent;
+  useEffect(() => {
+    let cancelled = false;
+    void getCurrentFix().then((fix) => {
+      if (cancelled || !fix) return;
+      setInitialFix({ lng: fix.position[0], lat: fix.position[1] });
+    });
+    return () => {
+      cancelled = true;
+    };
+    // Nur `getCurrent` als Abhängigkeit, nicht `geo`: Der Hook gibt bei jedem
+    // Render ein neues Objekt zurück, womit dieser Effekt endlos liefe — und
+    // die dauernden Renders setzen nebenbei die Entprellung der Adresssuche
+    // zurück, sodass gar keine Vorschläge mehr erscheinen.
+  }, [getCurrentFix]);
 
   /* ---------------------------------------------------------------- *
    * Session
@@ -214,8 +242,9 @@ export default function App() {
   }, [geo, voice, session]);
 
   const proximity = useMemo(
-    () => (geo.fix ? { lng: geo.fix.position[0], lat: geo.fix.position[1] } : null),
-    [geo.fix],
+    () =>
+      geo.fix ? { lng: geo.fix.position[0], lat: geo.fix.position[1] } : initialFix,
+    [geo.fix, initialFix],
   );
 
   const navigating = session.phase === 'navigating' || session.phase === 'arrived';

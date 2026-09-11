@@ -178,6 +178,8 @@ export interface PlaceRef {
   /** Full address line as returned by geocoding. */
   address?: string;
   location: LngLat;
+  /** Luftlinie zum Suchzeitpunkt-Standort, falls dieser bekannt war. */
+  distanceM?: number;
 }
 
 export interface TripPlan {
