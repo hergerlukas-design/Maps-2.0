@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { LngLat } from '@shared/types';
 import type { PlaceRef } from '@/types/domain';
 import { hasMapbox } from '@/config/env';
@@ -29,6 +29,7 @@ export function SearchBar({
 }: SearchBarProps) {
   const search = usePlaceSearch(proximity);
   const [focused, setFocused] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const showResults = focused && (search.loading || search.results.length > 0);
   const text = destination && !focused ? destination.name : search.query;
@@ -43,6 +44,7 @@ export function SearchBar({
           </svg>
 
           <input
+            ref={inputRef}
             type="text"
             inputMode="search"
             autoComplete="off"
@@ -51,6 +53,23 @@ export function SearchBar({
             disabled={!hasMapbox}
             value={text}
             onChange={(event) => search.setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                inputRef.current?.blur();
+                return;
+              }
+              // Die Eingabetaste liegt auf der Tastatur direkt unter den
+              // Vorschlägen — sie soll den ersten übernehmen, nicht nichts tun.
+              if (event.key === 'Enter') {
+                const first = search.results[0];
+                if (!first) return;
+                event.preventDefault();
+                search.accept(first);
+                onSelect(first);
+                setFocused(false);
+                inputRef.current?.blur();
+              }
+            }}
             onFocus={() => {
               setFocused(true);
               // Beim Antippen den bisherigen Zieltext übernehmen, damit man ihn
@@ -112,6 +131,11 @@ export function SearchBar({
                   search.accept(place);
                   onSelect(place);
                   setFocused(false);
+                  // Den Fokus ausdrücklich abgeben, sonst bleibt auf dem
+                  // Telefon die Bildschirmtastatur stehen und verdeckt das
+                  // Sheet mit der Start-Schaltfläche. `setFocused` ist nur
+                  // React-State und nimmt dem Feld den DOM-Fokus nicht.
+                  inputRef.current?.blur();
                 }}
                 className="flex w-full items-start gap-3 px-4 py-2.5 text-left active:bg-ink-800"
               >
