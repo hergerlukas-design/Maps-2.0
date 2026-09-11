@@ -124,13 +124,14 @@
  * hidden — but the attribution stays, because the Mapbox terms require it.
  */
 .mapboxgl-ctrl-bottom-left,
-.mapboxgl-ctrl-top-right,
+.mapboxgl-ctrl-bottom-right,
 .mapboxgl-ctrl-top-left {
   display: none;
 }
 
-.mapboxgl-ctrl-bottom-right {
-  margin: 0 0.25rem 0.25rem 0;
+/* Attribution oben rechts, unterhalb von Suchleiste und Einstellungs-Knopf. */
+.mapboxgl-ctrl-top-right {
+  margin: calc(3.75rem + var(--safe-top)) 0.5rem 0 0;
 }
 
 .mapboxgl-ctrl-attrib {

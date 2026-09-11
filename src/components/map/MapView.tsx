@@ -105,7 +105,9 @@ export function MapView({
       center: [10.4515, 51.1657], // Geographic centre of Germany.
       zoom: 5.4,
       pitch: 0,
-      attributionControl: true,
+      // Eigene Platzierung weiter unten: Die Standardposition unten rechts läge
+      // unter dem Sheet und würde dort eine Schaltfläche überdecken.
+      attributionControl: false,
       // The app draws its own gestures hints; the compass/zoom controls are hidden.
       logoPosition: 'bottom-right',
       // Keeps label rendering crisp without the cost of a full 3D globe.
@@ -113,6 +115,14 @@ export function MapView({
       fadeDuration: 120,
     });
     mapRef.current = map;
+
+    // Die Attribution ist vertraglich gefordert und muss sichtbar bleiben. In
+    // kompakter Form oben rechts steht sie nie im Weg — unten rechts läge sie
+    // unter dem Ziel-Sheet.
+    map.addControl(
+      new mapboxgl.AttributionControl({ compact: true }),
+      'top-right',
+    );
 
     map.on('load', () => {
       map.addSource(SOURCE_ROUTE, { type: 'geojson', data: emptyCollection() });

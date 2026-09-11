@@ -16,7 +16,8 @@ import { ManeuverBanner } from '@/components/nav/ManeuverBanner';
 import { NavBottomBar } from '@/components/nav/NavBottomBar';
 import { StopSheet } from '@/components/nav/StopSheet';
 import { TopUpDialog } from '@/components/nav/TopUpDialog';
-import { RoutePlanner } from '@/components/planner/RoutePlanner';
+import { SearchBar } from '@/components/planner/SearchBar';
+import { TripSheet } from '@/components/planner/TripSheet';
 import { SettingsPanel } from '@/components/settings/SettingsPanel';
 import { AccountPanel } from '@/components/auth/AccountPanel';
 
@@ -36,15 +37,16 @@ export default function App() {
   const updateGuestVehicle = useAppStore((state) => state.updateGuestVehicle);
   const plan = useAppStore((state) => state.plan);
   const setPlan = useAppStore((state) => state.setPlan);
-  const swapPlanEnds = useAppStore((state) => state.swapPlanEnds);
   const vehicle = useActiveVehicle();
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [cameraMode, setCameraMode] = useState<CameraMode>('follow');
-  const [plannerCollapsed, setPlannerCollapsed] = useState(false);
+  /** Startpunkt beim aktuellen Standort lassen, bis der Nutzer ihn ändert. */
+  const [originOverride, setOriginOverride] = useState<PlaceRef | null>(null);
   const [highlightedStopId, setHighlightedStopId] = useState<string | null>(null);
   const [reachedStop, setReachedStop] = useState<StopWaypoint | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
   const tripIdRef = useRef<string | null>(null);
 
   const geo = useGeolocation();
@@ -138,21 +140,37 @@ export default function App() {
     };
   }, [geo]);
 
-  const calculate = useCallback(() => {
-    if (!plan.origin || !plan.destination) return;
-    void session
-      .planRoute(
-        plan.origin.location,
-        plan.destination.location,
-        plan.origin.name,
-        plan.destination.name,
-      )
-      // Nach dem Berechnen einklappen: Die berechnete Route will man sehen,
-      // nicht das Formular, das sie erzeugt hat.
-      .then((planned) => {
-        if (planned) setPlannerCollapsed(true);
-      });
-  }, [plan.origin, plan.destination, session]);
+  /**
+   * Berechnet die Route zum gewählten Ziel.
+   *
+   * Ohne ausdrücklich gesetzten Startpunkt wird der aktuelle Standort
+   * verwendet — wie in gängigen Navigations-Apps. Erst wenn der nicht zu
+   * ermitteln ist, wird der Nutzer darauf hingewiesen.
+   */
+  const calculate = useCallback(async () => {
+    const destination = plan.destination;
+    if (!destination) return;
+
+    let start = originOverride;
+    if (!start) {
+      const here = await useCurrentLocation();
+      if (!here) {
+        setLocationError(
+          'Startpunkt konnte nicht bestimmt werden. Bitte Standort freigeben oder einen Startpunkt wählen.',
+        );
+        return;
+      }
+      start = here;
+    }
+    setLocationError(null);
+    setPlan({ origin: start });
+    await session.planRoute(
+      start.location,
+      destination.location,
+      start.name,
+      destination.name,
+    );
+  }, [plan.destination, originOverride, session, setPlan]);
 
   const startNavigation = useCallback(() => {
     geo.start();
@@ -233,44 +251,60 @@ export default function App() {
         /*
           `pointer-events-none` am Container ist zwingend: Er liegt als
           `absolute inset-0` über der gesamten Karte. Ohne die Angabe nimmt er
-          Eingaben an — auch dort, wo er nur leerer Platz über dem Planer ist.
-          Dass der Abstandhalter darin `pointer-events-none` trägt, genügt
-          nicht: Die Eingabe geht durch das Kind hindurch und landet auf dem
-          Elternelement, das genauso groß ist. Zoomen und Ziehen der Karte
-          wären damit auf dem Planer-Bildschirm vollständig tot.
+          Eingaben an — auch dort, wo er nur leerer Platz ist —, und Zoomen wie
+          Ziehen der Karte wären tot.
         */
         <div className="pointer-events-none absolute inset-0 flex flex-col">
+          <SearchBar
+            destination={plan.destination}
+            proximity={proximity}
+            onSelect={(place) => {
+              setPlan({ destination: place });
+              session.reset();
+            }}
+            onClear={() => {
+              setPlan({ destination: null });
+              session.reset();
+            }}
+            onOpenSettings={() => setSettingsOpen(true)}
+          />
+
           <div className="flex-1" />
-          <div
-            className={`pointer-events-auto overflow-hidden rounded-t-[var(--radius-sheet)] bg-ink-950/95 backdrop-blur-xl transition-[max-height] duration-300 ${
-              plannerCollapsed ? 'max-h-40' : 'max-h-[85%]'
-            }`}
-          >
-            <RoutePlanner
-              origin={plan.origin}
-              destination={plan.destination}
-              remainingRangeKm={plan.remainingRangeKm}
-              vehicle={vehicle}
-              vehicles={vehicles}
-              route={session.route}
-              routing={session.phase === 'routing'}
-              routeError={session.routeError}
-              proximity={proximity}
-              onOriginChange={(origin) => setPlan({ origin })}
-              onDestinationChange={(destination) => setPlan({ destination })}
-              onSwap={swapPlanEnds}
-              onRangeChange={(remainingRangeKm) => setPlan({ remainingRangeKm })}
-              onVehicleChange={setActiveVehicle}
-              onVehiclePatch={updateGuestVehicle}
-              onUseCurrentLocation={useCurrentLocation}
-              onCalculate={calculate}
-              onStart={startNavigation}
-              onOpenSettings={() => setSettingsOpen(true)}
-              onOpenAccount={() => setAccountOpen(true)}
-              collapsed={plannerCollapsed}
-              onToggleCollapsed={() => setPlannerCollapsed((value) => !value)}
-            />
-          </div>
+
+          {locationError && !plan.destination && (
+            <div className="pointer-events-auto px-3 pb-3">
+              <p className="panel rounded-2xl px-4 py-3 text-sm text-warn-500">{locationError}</p>
+            </div>
+          )}
+
+          {plan.destination && (
+            <div className="pointer-events-auto">
+              <TripSheet
+                destination={plan.destination}
+                origin={originOverride}
+                remainingRangeKm={plan.remainingRangeKm}
+                vehicle={vehicle}
+                vehicles={vehicles}
+                route={session.route}
+                routing={session.phase === 'routing'}
+                routeError={session.routeError ?? locationError}
+                proximity={proximity}
+                onOriginChange={(place) => {
+                  setOriginOverride(place);
+                  session.reset();
+                }}
+                onRangeChange={(remainingRangeKm) => setPlan({ remainingRangeKm })}
+                onVehicleChange={setActiveVehicle}
+                onVehiclePatch={updateGuestVehicle}
+                onCalculate={() => void calculate()}
+                onStart={startNavigation}
+                onClose={() => {
+                  setPlan({ destination: null });
+                  session.reset();
+                }}
+              />
+            </div>
+          )}
         </div>
       )}
 

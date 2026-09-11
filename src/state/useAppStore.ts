@@ -103,7 +103,6 @@ interface AppState {
   setActiveVehicle: (id: string) => void;
   updateGuestVehicle: (patch: Partial<Omit<Vehicle, 'id' | 'userId'>>) => void;
   setPlan: (patch: Partial<PlanDraft>) => void;
-  swapPlanEnds: () => void;
   /** Pulls settings and vehicles for a signed-in user. */
   hydrateFromAccount: (userId: string) => Promise<void>;
 }
@@ -190,11 +189,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
     set({ plan });
     // Only the range is worth restoring; places go stale immediately.
     writeLocal(PLAN_STORAGE_KEY, { remainingRangeKm: plan.remainingRangeKm });
-  },
-
-  swapPlanEnds: () => {
-    const { origin, destination } = get().plan;
-    set({ plan: { ...get().plan, origin: destination, destination: origin } });
   },
 
   hydrateFromAccount: async (userId) => {
