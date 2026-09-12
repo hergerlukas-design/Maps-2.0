@@ -5,6 +5,7 @@ import type { StopWaypoint } from '@/types/domain';
 import { env, hasMapbox } from '@/config/env';
 import { boundsOf, sliceLine, toPosition, type MeasuredLine } from '@/lib/geo';
 import type { NavState } from '@/navigation/engine';
+import { mapErrorNotice } from './errors';
 
 /** How the camera behaves. */
 export type CameraMode =
@@ -296,14 +297,25 @@ export function MapView({
     map.on('style.load', () => {
       installLayers(MAP_COLOURS[themeRef.current]);
       setReady(true);
+      // Ein geglückter Stilwechsel ist der einzige Beleg dafür, dass Mapbox
+      // wieder antwortet — nur hier darf ein alter Hinweis verschwinden.
+      setError(null);
     });
 
+    /*
+     * Die Einordnung steckt in `mapErrorNotice` (mit Tests). Ein angezeigter
+     * Hinweis bleibt stehen: Eine Ablehnung geht nicht von selbst weg. Ein
+     * Löschen im `idle`-Ereignis hing daran, ob nach dem ersten fertig
+     * gezeichneten Bild noch eine Kachel nachgefragt wird — der Hinweis wäre
+     * mal sichtbar geblieben und mal sofort verschwunden.
+     */
     map.on('error', (event) => {
-      const message = event.error?.message ?? 'Unbekannter Kartenfehler.';
-      // Missing tiles during signal loss are normal; only surface real failures.
-      if (/token|unauthorized|forbidden/i.test(message)) {
-        setError(`Karte konnte nicht geladen werden: ${message}`);
+      const notice = mapErrorNotice(event.error);
+      if (!notice) {
+        console.warn('[map] Kartenanfrage fehlgeschlagen:', event.error?.message);
+        return;
       }
+      setError(notice);
     });
 
     /**
@@ -541,11 +553,17 @@ export function MapView({
   return (
     <div className="absolute inset-0">
       <div ref={containerRef} className="h-full w-full" />
+      {/*
+        Als schmaler Streifen am unteren Rand statt mittig über der Karte: Ein
+        Kartenfehler darf die Sicht auf die Route nicht verstellen — schon gar
+        nicht während der Fahrt.
+      */}
       {error && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">
-          {/* `break-words`: Mapbox errors quote the failing URL, which has no
-              spaces to wrap at and would otherwise overflow the panel. */}
-          <p className="panel max-w-sm rounded-2xl p-4 text-sm break-words text-ink-200">
+        <div
+          className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-3"
+          style={{ paddingBottom: 'calc(0.75rem + var(--safe-bottom))' }}
+        >
+          <p className="panel pointer-events-auto max-w-sm rounded-2xl px-4 py-2.5 text-sm text-warn-500">
             {error}
           </p>
         </div>
