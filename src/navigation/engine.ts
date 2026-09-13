@@ -33,6 +33,15 @@ export interface EngineOptions {
   offRouteToleranceM?: number;
   /** Consecutive off-route fixes required before reporting `offRoute`. */
   offRouteFixes?: number;
+  /**
+   * Abstand, in dem eine anhaltende Abweichung erneut gemeldet wird.
+   *
+   * Eine einmalige Meldung reicht nicht: Scheitert die Neuberechnung — und
+   * Funklöcher sind genau dort, wo man sich verfährt —, bliebe es sonst für
+   * immer bei der alten Route. Auch eine geglückte Neuberechnung kann zu spät
+   * kommen, wenn der Fahrer inzwischen die nächste Abzweigung genommen hat.
+   */
+  offRouteRepeatS?: number;
   /** Distance to the final waypoint at which the trip counts as finished. */
   arrivalRadiusM?: number;
 }
@@ -42,6 +51,7 @@ const DEFAULTS = {
   lookBehindM: 300,
   offRouteToleranceM: 45,
   offRouteFixes: 3,
+  offRouteRepeatS: 10,
   arrivalRadiusM: 40,
 } satisfies Required<EngineOptions>;
 
@@ -115,6 +125,8 @@ export class NavigationEngine {
   private stepIndex = 0;
   private smoothedSpeedMps = 0;
   private offRouteStreak = 0;
+  private offRouteReportedAt: number | null = null;
+  private lastFixStrayed = false;
   private arrived = false;
   private lastFixAt: number | null = null;
   private lastProgressM = 0;
@@ -147,23 +159,36 @@ export class NavigationEngine {
     this.lastProgressM = this.progressM;
     this.lastSnapIndex = this.vertexIndexAt(this.progressM);
     this.stepIndex = this.stepIndexAt(this.progressM);
+    this.offRouteStreak = 0;
+    this.offRouteReportedAt = null;
+    this.lastFixStrayed = false;
   }
 
   update(fix: GpsFix): NavState {
     const window = this.searchWindow();
     const snap = snapToLine(this.line, fix.position, window[0], window[1]);
 
-    // Progress is monotonic: GPS noise must never rewind the route. A genuine
-    // backwards move (wrong turn, U-turn) shows up as off-route instead, which
-    // triggers a reroute rather than a rewinding progress bar.
-    const advanced = snap.alongM > this.progressM;
-    if (advanced) {
+    /*
+     * Erst einordnen, dann zählen.
+     *
+     * Solange die Ortung neben der Route liegt, darf der Fortschritt nicht
+     * weiterlaufen. Das Fangfenster reicht 3 km voraus, also zieht eine
+     * parallel verlaufende Straße den Fangpunkt immer weiter nach vorn: Die
+     * Restdistanz schrumpfte, während der Fahrer sich entfernte — und die
+     * Reichweitenrechnung verbuchte Kilometer, die nie auf der Route gefahren
+     * wurden.
+     */
+    const strayed = this.updateOffRoute(fix, snap.offsetM);
+
+    // Der Fortschritt läuft nur vorwärts: GPS-Rauschen darf die Route nie
+    // zurückspulen. Eine echte Rückwärtsbewegung (falsche Abbiegung, Wenden)
+    // zeigt sich stattdessen als Abweichung und löst eine Neuberechnung aus.
+    if (!strayed && snap.alongM > this.progressM) {
       this.progressM = snap.alongM;
       this.lastSnapIndex = snap.segmentIndex;
     }
 
-    this.updateSpeed(fix);
-    this.updateOffRoute(fix, snap.offsetM);
+    this.updateSpeed(fix, strayed);
     this.advanceStep();
 
     const maneuver = this.buildManeuver();
@@ -245,23 +270,35 @@ export class NavigationEngine {
     }
   }
 
-  private updateSpeed(fix: GpsFix): void {
+  private updateSpeed(fix: GpsFix, strayed: boolean): void {
     const reported =
       fix.speedMps != null && Number.isFinite(fix.speedMps) && fix.speedMps >= 0
         ? fix.speedMps
         : null;
 
-    // Desktop browsers and some Android devices leave `speed` null, so fall
-    // back to how far along the route we moved since the previous fix.
+    /*
+     * Desktop browsers and some Android devices leave `speed` null, so fall
+     * back to how far along the route we moved since the previous fix.
+     *
+     * Nicht jedoch rund um eine Abweichung: Währenddessen steht der
+     * Fortschritt still (daraus abgeleitet käme Tempo 0), und bei der Rückkehr
+     * auf die Route holt er alles auf einen Schlag nach — aus zwei Kilometern
+     * in einer Sekunde würde sonst Tempo 7200. In beiden Fällen bleibt es
+     * lieber beim zuletzt gemessenen Wert.
+     */
     let derived: number | null = null;
-    if (this.lastFixAt != null) {
+    if (this.lastFixAt != null && !strayed && !this.lastFixStrayed) {
       const dtS = (fix.timestamp - this.lastFixAt) / 1000;
       if (dtS >= 0.5 && dtS <= 30) {
-        derived = Math.max(0, (this.progressM - this.lastProgressM) / dtS);
+        const observedMps = Math.max(0, (this.progressM - this.lastProgressM) / dtS);
+        // Eine Lücke im Empfang (Tunnel) lässt den Fortschritt ebenso
+        // springen. Alles jenseits von 250 km/h ist keine Messung.
+        if (observedMps <= 70) derived = observedMps;
       }
     }
     this.lastFixAt = fix.timestamp;
     this.lastProgressM = this.progressM;
+    this.lastFixStrayed = strayed;
 
     const observed = reported ?? derived;
     if (observed == null) return;
@@ -274,20 +311,35 @@ export class NavigationEngine {
         : this.smoothedSpeedMps * 0.7 + observed * 0.3;
   }
 
-  private updateOffRoute(fix: GpsFix, offsetM: number): void {
+  /** Ordnet die Ortung ein und meldet, ob sie neben der Route liegt. */
+  private updateOffRoute(fix: GpsFix, offsetM: number): boolean {
     // A 60 m accuracy fix cannot prove a 45 m deviation.
     const tolerance = Math.max(
       this.options.offRouteToleranceM,
       Number.isFinite(fix.accuracyM) ? fix.accuracyM * 1.5 : 0,
     );
-    if (offsetM > tolerance) {
-      this.offRouteStreak++;
-      if (this.offRouteStreak === this.options.offRouteFixes) {
-        this.events.onOffRoute?.(offsetM);
-      }
-    } else {
+
+    if (offsetM <= tolerance) {
       this.offRouteStreak = 0;
+      this.offRouteReportedAt = null;
+      return false;
     }
+
+    this.offRouteStreak++;
+    if (this.offRouteStreak < this.options.offRouteFixes) return true;
+
+    // Nach der ersten Meldung in festem Abstand erneut melden, solange die
+    // Route verlassen bleibt. Der Takt kommt aus den Zeitstempeln der Ortung,
+    // nicht aus deren Anzahl — die Rate schwankt je nach Gerät und Empfang.
+    const repeatMs = this.options.offRouteRepeatS * 1000;
+    const due =
+      this.offRouteReportedAt == null ||
+      fix.timestamp - this.offRouteReportedAt >= repeatMs;
+    if (due) {
+      this.offRouteReportedAt = fix.timestamp;
+      this.events.onOffRoute?.(offsetM);
+    }
+    return true;
   }
 
   private isOffRoute(): boolean {

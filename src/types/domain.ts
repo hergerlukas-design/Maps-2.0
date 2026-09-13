@@ -204,6 +204,23 @@ export interface StopWaypoint {
   reachedAt?: number;
 }
 
+/**
+ * Die Wegpunkte, die eine Neuberechnung noch anfahren soll.
+ *
+ * Eine Neuberechnung startet immer an der aktuellen Position des Autos. Der
+ * ursprüngliche Startpunkt ist damit kein Ziel mehr — auch dann nicht, wenn
+ * `reachedAt` bei ihm fehlt. Gesetzt wird das nämlich nur von der
+ * Wegpunkt-Erkennung, und die kennt ausschließlich Zwischenziele; beim
+ * Startpunkt bleibt es bis zum Schluss leer.
+ *
+ * Ein Filter allein über `reachedAt` ließ ihn deshalb in der Liste stehen,
+ * und die erste Neuberechnung führte den Fahrer zurück zum Ausgangspunkt,
+ * bevor es weiter zum Ziel ging.
+ */
+export function remainingWaypoints(waypoints: StopWaypoint[]): StopWaypoint[] {
+  return waypoints.filter((w) => w.kind !== 'origin' && w.reachedAt == null);
+}
+
 /* ------------------------------------------------------------------ *
  * Favourites & history
  * ------------------------------------------------------------------ */

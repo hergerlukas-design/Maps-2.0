@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { LngLat, RankedStop, Stop, StopKind } from '@shared/types';
 import type { Settings, StopWaypoint, Vehicle } from '@/types/domain';
-import { refuelStopKinds } from '@/types/domain';
+import { refuelStopKinds, remainingWaypoints } from '@/types/domain';
 import { measureLine } from '@/lib/geo';
 import {
   fetchRoute,
@@ -122,6 +122,11 @@ export function useNavigationSession({
    * without making either callback depend on the other's identity.
    */
   const offRouteHandlerRef = useRef<(() => void) | null>(null);
+  /** Läuft gerade eine Neuberechnung, und die wievielte. */
+  const rerouteSeqRef = useRef(0);
+  const rerouteInFlightRef = useRef(false);
+  /** Steht gerade eine Fehlermeldung der Neuberechnung im Hinweisfeld? */
+  const rerouteFailureShownRef = useRef(false);
 
   settingsRef.current = settings;
   vehicleRef.current = vehicle;
@@ -339,6 +344,9 @@ export function useNavigationSession({
     [runSearch],
   );
 
+  /** Die Wegpunkte, die eine Neuberechnung noch anfahren soll. */
+  const remainingTargets = useCallback(() => remainingWaypoints(waypointsRef.current), []);
+
   /* ---------------------------------------------------------------- *
    * Engine wiring
    * ---------------------------------------------------------------- */
@@ -463,15 +471,26 @@ export function useNavigationSession({
         return false;
       }
 
+      /*
+       * Jede Anfrage bekommt eine Nummer. Antworten, die überholt wurden —
+       * etwa weil der Fahrer während der Berechnung noch eine Abzweigung
+       * genommen hat und längst neu berechnet wird — werden verworfen, statt
+       * die aktuellere Route zu überschreiben.
+       */
+      const seq = ++rerouteSeqRef.current;
+      const isCurrent = () => seq === rerouteSeqRef.current;
+
+      rerouteInFlightRef.current = true;
       setRerouting(true);
       try {
         const planned = await fetchRoute(coordinates, {
           avoid: settingsRef.current.avoid,
           originBearing: fix.headingDeg,
         });
+        if (!isCurrent()) return false;
         setRoute(planned);
         routeRef.current = planned;
-        setWaypoints([
+        const nextWaypoints: StopWaypoint[] = [
           {
             id: 'origin',
             kind: 'origin',
@@ -480,7 +499,13 @@ export function useNavigationSession({
             reachedAt: Date.now(),
           },
           ...remaining,
-        ]);
+        ];
+        setWaypoints(nextWaypoints);
+        // Auch sofort in den Ref, nicht erst beim nächsten Rendern: Eine
+        // Abweichung unmittelbar nach dieser Neuberechnung soll nicht noch
+        // einmal mit dem alten Stand rechnen und den gerade eingefügten
+        // Stopp wieder verlieren.
+        waypointsRef.current = nextWaypoints;
 
         // A new route starts at the car, so the range baseline has to move with
         // it — otherwise the distance already driven would be counted twice.
@@ -495,30 +520,70 @@ export function useNavigationSession({
         };
 
         // Carry the monitor across so a snooze survives a reroute.
-        engineRef.current = new NavigationEngine(planned, engineEvents());
-        setRerouting(false);
+        const engine = new NavigationEngine(planned, engineEvents());
+        engineRef.current = engine;
+
+        /*
+         * Sofort die neueste Ortung einspeisen. Zwischen Anfrage und Antwort
+         * vergehen ein bis drei Sekunden, auf der Autobahn also bis zu hundert
+         * Meter. Ohne diesen Schritt zeigte die Anzeige bis zur nächsten
+         * Ortung den Startpunkt der neuen Route statt der Stelle, an der das
+         * Auto tatsächlich steht.
+         */
+        const latest = lastFixRef.current;
+        if (latest) setNav(engine.update(latest));
+
+        // Nur die eigene Fehlermeldung zurücknehmen. Ein pauschales Leeren
+        // hätte die Reichweiten-Warnung mitgelöscht, und die wird nur ein
+        // einziges Mal ausgelöst — sie käme nicht wieder.
+        if (rerouteFailureShownRef.current) {
+          rerouteFailureShownRef.current = false;
+          setNotice(null);
+        }
         return true;
       } catch (error) {
-        setRerouting(false);
+        if (!isCurrent()) return false;
+        rerouteFailureShownRef.current = true;
         setNotice(
           error instanceof DirectionsError
             ? `Neuberechnung fehlgeschlagen: ${error.message}`
             : 'Route konnte nicht neu berechnet werden.',
         );
         return false;
+      } finally {
+        if (isCurrent()) {
+          rerouteInFlightRef.current = false;
+          setRerouting(false);
+        }
       }
     },
     [engineEvents],
   );
 
-  /** Debounces off-route reroutes so a lane change cannot trigger a storm. */
+  /** Beginn der letzten Anfrage, geglückt oder nicht. */
   const lastRerouteAtRef = useRef(0);
+  /**
+   * Die Engine meldet eine anhaltende Abweichung alle zehn Sekunden erneut.
+   * Hier wird entschieden, ob daraus eine Anfrage wird.
+   *
+   * Gebremst wird nur gegen einen Anfragensturm: keine zweite Anfrage,
+   * solange eine läuft, und danach eine kurze Sperre. Die Sperre ist
+   * ausdrücklich kürzer als der Melde-Abstand der Engine — sonst fiele
+   * ausgerechnet die Meldung durchs Raster, die auf eine gerade erst
+   * geglückte Neuberechnung folgt, weil der Fahrer inzwischen die nächste
+   * Abzweigung genommen hat.
+   *
+   * Ein gescheiterter Versuch bremst nicht länger als ein geglückter. Vorher
+   * sperrte jeder Versuch fünfzehn Sekunden, und da die Engine ohnehin nur
+   * ein einziges Mal meldete, blieb es danach für immer bei der alten Route —
+   * ausgerechnet im Funkloch, in dem man sie am dringendsten braucht.
+   */
   const handleOffRoute = useCallback(() => {
-    if (Date.now() - lastRerouteAtRef.current < 15_000) return;
+    if (rerouteInFlightRef.current) return;
+    if (Date.now() - lastRerouteAtRef.current < 4_000) return;
     lastRerouteAtRef.current = Date.now();
-    const remaining = waypointsRef.current.filter((w) => w.reachedAt == null);
-    void rebuildRoute(remaining, true);
-  }, [rebuildRoute]);
+    void rebuildRoute(remainingTargets(), true);
+  }, [rebuildRoute, remainingTargets]);
 
   offRouteHandlerRef.current = handleOffRoute;
 
@@ -529,7 +594,7 @@ export function useNavigationSession({
   /** Inserts the chosen stop before the remaining waypoints and reroutes. */
   const chooseStop = useCallback(
     async (ranked: RankedStop) => {
-      const remaining = waypointsRef.current.filter((w) => w.reachedAt == null);
+      const remaining = remainingTargets();
       const inserted: StopWaypoint = {
         id: ranked.stop.id,
         kind: ranked.stop.kind,
@@ -542,7 +607,7 @@ export function useNavigationSession({
       if (!ok) monitorRef.current?.resume();
       return ok;
     },
-    [rebuildRoute],
+    [rebuildRoute, remainingTargets],
   );
 
   const declineStop = useCallback(() => {
@@ -671,7 +736,10 @@ export function useNavigationSession({
     widenSearch,
     quickSearch,
     recordTopUp,
-    dismissNotice: () => setNotice(null),
+    dismissNotice: () => {
+      rerouteFailureShownRef.current = false;
+      setNotice(null);
+    },
     /** The engine's measured line, for drawing the driven/remaining split. */
     measuredLine: route ? route.line : measureLine([]),
   };

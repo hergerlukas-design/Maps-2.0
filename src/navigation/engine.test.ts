@@ -235,6 +235,123 @@ describe('NavigationEngine', () => {
     expect(onOffRoute).not.toHaveBeenCalled();
   });
 
+  it('meldet eine anhaltende Abweichung wiederholt', () => {
+    /*
+     * Eine einzige Meldung reichte nicht. Scheiterte die Neuberechnung — und
+     * Funklöcher liegen genau dort, wo man sich verfährt —, blieb es für immer
+     * bei der alten Route, weil die Engine nie wieder meldete.
+     */
+    const route = buildRoute();
+    const onOffRoute = vi.fn();
+    const engine = new NavigationEngine(route, { onOffRoute });
+    driveTo(engine, route, 1000);
+
+    // Eine halbe Minute abseits der Route, bei einer Ortung je Sekunde.
+    const t0 = 2_000_000;
+    for (let i = 0; i < 30; i++) {
+      engine.update({ ...offsetFix(route, 1000 + i * 30, 400), timestamp: t0 + i * 1000 });
+    }
+
+    // Voreinstellung sind zehn Sekunden Abstand: drei Meldungen in dreißig.
+    expect(onOffRoute.mock.calls.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('zählt keinen Fortschritt, solange die Route verlassen ist', () => {
+    /*
+     * Das Fangfenster reicht drei Kilometer voraus. Fährt jemand parallel zur
+     * Route weiter, wanderte der Fangpunkt immer weiter nach vorn: Die
+     * Restdistanz schrumpfte, während der Fahrer sich entfernte — und die
+     * Reichweitenrechnung verbuchte Kilometer, die nie auf der Route lagen.
+     */
+    const route = buildRoute();
+    const engine = new NavigationEngine(route);
+    driveTo(engine, route, 1000);
+    const before = engine.progress;
+
+    for (let i = 0; i < 20; i++) engine.update(offsetFix(route, 1000 + i * 100, 400));
+
+    expect(engine.progress).toBe(before);
+  });
+
+  it('nimmt den Fortschritt wieder auf, sobald die Route erreicht ist', () => {
+    const route = buildRoute();
+    const engine = new NavigationEngine(route);
+    driveTo(engine, route, 1000);
+    for (let i = 0; i < 5; i++) engine.update(offsetFix(route, 1000 + i * 100, 400));
+
+    // Zurück auf der Route, ein Stück weiter: der Fortschritt zieht nach.
+    const state = engine.update(fixAt(route, 1600));
+    expect(state.isOffRoute).toBe(false);
+    expect(engine.progress).toBeCloseTo(1600, 0);
+  });
+
+  it('behält das Tempo, während die Route verlassen ist', () => {
+    /*
+     * Ohne eigene Tempoangabe leitet die Engine das Tempo aus dem Fortschritt
+     * ab. Steht der still, käme null heraus und die Restzeit liefe ins
+     * Unendliche — auf genau den Geräten, die `speed` nicht liefern.
+     */
+    const route = buildRoute();
+    const engine = new NavigationEngine(route);
+
+    // 25 m je Sekunde, also 90 km/h — eine Fahrt, die es geben kann.
+    let t = 5_000_000;
+    let along = 0;
+    while (along < 1000) {
+      along += 25;
+      t += 1000;
+      engine.update(fixAt(route, along, { speedMps: null, timestamp: t }));
+    }
+    const before = engine.update(
+      fixAt(route, 1025, { speedMps: null, timestamp: (t += 1000) }),
+    ).speedMps;
+    expect(before).toBeGreaterThan(20);
+
+    let state;
+    for (let i = 0; i < 10; i++) {
+      state = engine.update({
+        ...offsetFix(route, 1050 + i * 25, 400),
+        speedMps: null,
+        timestamp: (t += 1000),
+      });
+    }
+    expect(state!.speedMps).toBeCloseTo(before, 5);
+    expect(Number.isFinite(state!.remainingDurationS)).toBe(true);
+  });
+
+  it('springt beim Zurückkehren auf die Route nicht im Tempo', () => {
+    /*
+     * Der eingefrorene Fortschritt holt bei der Rückkehr alles auf einen
+     * Schlag nach. Ohne Sperre ergäbe das aus zwei Kilometern in einer
+     * Sekunde ein Tempo von 7200 km/h — und eine Restzeit von Sekunden.
+     */
+    const route = buildRoute();
+    const engine = new NavigationEngine(route);
+
+    let t = 6_000_000;
+    let along = 0;
+    while (along < 1000) {
+      along += 25;
+      t += 1000;
+      engine.update(fixAt(route, along, { speedMps: null, timestamp: t }));
+    }
+
+    for (let i = 0; i < 10; i++) {
+      engine.update({
+        ...offsetFix(route, 1100 + i * 200, 400),
+        speedMps: null,
+        timestamp: (t += 1000),
+      });
+    }
+    // Zurück auf der Route, zwei Kilometer weiter als beim Verlassen.
+    const state = engine.update(
+      fixAt(route, 3000, { speedMps: null, timestamp: (t += 1000) }),
+    );
+
+    // 70 m/s ist die Grenze des Plausiblen; alles darüber ist keine Messung.
+    expect(state.speedMps).toBeLessThanOrEqual(70);
+  });
+
   it('recovers from off-route once back on the line', () => {
     const route = buildRoute();
     const engine = new NavigationEngine(route);
