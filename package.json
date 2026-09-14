@@ -15,9 +15,18 @@
     "start": "node dist-server/server/index.js",
     "lint": "eslint .",
     "typecheck": "tsc -b --noEmit false --emitDeclarationOnly false --pretty",
-    "test": "vitest run"
+    "test": "vitest run",
+    "android:sync": "npm run build && cap sync android",
+    "android:open": "cap open android",
+    "android:apk": "npm run android:sync && cd android && ./gradlew assembleDebug",
+    "android:aab": "npm run android:sync && cd android && ./gradlew bundleRelease"
   },
   "dependencies": {
+    "@capacitor-community/background-geolocation": "^1.2.26",
+    "@capacitor-community/keep-awake": "^7.1.0",
+    "@capacitor/app": "^7.1.2",
+    "@capacitor/core": "^7.6.9",
+    "@capacitor/status-bar": "^7.0.6",
     "@supabase/supabase-js": "^2.116.0",
     "express": "^5.2.1",
     "mapbox-gl": "^3.30.0",
@@ -27,6 +36,8 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@capacitor/android": "^7.6.9",
+    "@capacitor/cli": "^7.6.9",
     "@tailwindcss/vite": "^4.3.3",
     "@types/express": "^5.0.6",
     "@types/geojson": "^7946.0.16",

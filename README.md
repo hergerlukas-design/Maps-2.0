@@ -215,16 +215,19 @@ src/
   navigation/engine.ts   Turn-by-Turn-Zustandsmaschine
   navigation/rangeMonitor.ts  Schwellenwert, Nachfrage-Intervall, kritische Reichweite
   services/              Mapbox, Supabase, Stopp-Suche und Bewertung, Push
+  platform/              Trennlinie Browser ↔ Android (Ortung, Bildschirm)
   hooks/                 Geolocation, Wake Lock, Sprache, Session-Orchestrierung
   components/            Karte, Navigations-UI, Planer, Einstellungen, Konto
   sw.ts                  Service Worker: Precache, Kachel-Cache, Push
+android/                 Von Capacitor erzeugtes Android-Projekt
+capacitor.config.ts      Kennung, Anzeigename, Plugin-Einstellungen
 supabase/migrations/     Schema mit RLS
 ```
 
 ## Tests
 
 ```bash
-npm test        # 66 Tests
+npm test        # 82 Tests
 npm run build   # Client
 npm run build:server
 ```
@@ -242,6 +245,80 @@ bei der Fehler teuer wären:
   Reichweite liegt
 - **Bewertung** — Preis gegen Umweg, Ladeleistung gegen Umweg, Dubletten aus
   zwei Ladesäulen-Quellen
+
+## Android-App (Capacitor)
+
+Dieselbe Oberfläche, aber in einer nativen Hülle. Der Grund ist nicht das
+Symbol auf dem Startbildschirm, sondern die Ortung: Im Browser endet sie,
+sobald der Bildschirm ausgeht oder eine andere App nach vorn kommt. Die
+native Fassung hält sie über einen Vordergrunddienst am Leben — sichtbar an
+einer dauerhaften Benachrichtigung, solange die Navigation läuft.
+
+### Was sich zwischen Web und App unterscheidet
+
+Genau drei Dinge, und alle liegen in `src/platform/`:
+
+| | Browser | Android |
+|---|---|---|
+| Ortung | `watchPosition`, endet im Hintergrund | Vordergrunddienst, läuft weiter |
+| Bildschirm wachhalten | Screen Wake Lock, nur bei sichtbarer Seite | `FLAG_KEEP_SCREEN_ON` |
+| Aktualisierung | Service Worker, Hinweis in der App | Play Store bzw. neue Installation |
+
+Alles Übrige ist derselbe Code. Wer eine der drei Stellen anfasst, muss beide
+Seiten bedenken — deshalb stecken sie hinter je einer Schnittstelle und nicht
+in verstreuten `if`-Abfragen.
+
+Der Sprachausgabe fehlt bewusst noch eine native Entsprechung: Sie läuft über
+die Web-Schnittstelle des WebView. Ob das bei ausgeschaltetem Bildschirm
+zuverlässig genug ist, zeigt erst eine Fahrt; falls nicht, ist der Austausch
+gegen ein natives Plugin auf `src/platform/` begrenzt.
+
+### Bauen ohne Android SDK
+
+Der Arbeitsablauf `Android-App bauen` in GitHub Actions baut eine
+Debug-APK und legt sie als Artefakt ab. Auf dem eigenen Rechner muss dafür
+nichts installiert sein.
+
+### Bauen mit Android SDK
+
+Nötig sind JDK 21 und das Android SDK (Android Studio, oder nur die
+Kommandozeilen-Werkzeuge). Ohne Studio: `ANDROID_HOME` setzen und eine
+`android/local.properties` mit `sdk.dir=…` anlegen.
+
+```bash
+npm run android:sync   # Weboberfläche bauen und ins Android-Projekt kopieren
+npm run android:apk    # Debug-APK nach android/app/build/outputs/apk/debug/
+npm run android:open   # In Android Studio öffnen
+```
+
+Nach jeder Änderung an der Weboberfläche ist `npm run android:sync` nötig —
+das Android-Projekt trägt eine Kopie, keinen Verweis.
+
+### Zwei Dinge, die den ersten Start sonst scheitern lassen
+
+**Der Mapbox-Token braucht eine eigene Fassung.** In der App läuft die
+Oberfläche unter der Herkunft `https://localhost`. Ein Token, der per
+URL-Beschränkung auf die Fly-Adresse begrenzt ist, wird dort abgewiesen, und
+die Karte bleibt leer. Lege im Mapbox-Konto einen zweiten öffentlichen Token
+für die App an und hinterlege ihn als Repository-Geheimnis
+`VITE_MAPBOX_TOKEN_NATIVE`; der Arbeitsablauf bevorzugt ihn, wenn er
+vorhanden ist.
+
+**Die API braucht eine absolute Adresse.** `/api` zeigt in der App auf
+`https://localhost` und damit ins Leere. Der Arbeitsablauf setzt deshalb
+`VITE_API_BASE`; die Voreinstellung ist `https://maps-2-0.fly.dev/api`. Die
+passende CORS-Freigabe für `https://localhost` ist serverseitig fest
+eingetragen, da muss nichts nachgezogen werden.
+
+### Veröffentlichung im Play Store
+
+Noch nicht eingerichtet, und bewusst nicht ungeprüft vorbereitet. Nötig wären:
+ein Signatur-Schlüssel (der **niemals** ins Repository gehört — `*.jks` und
+`*.keystore` sind deshalb ignoriert), ein Play-Console-Konto und eine
+Erklärung zum Vordergrunddienst vom Typ „Standort". Die Berechtigung
+`ACCESS_BACKGROUND_LOCATION` wird absichtlich **nicht** angefordert: Der
+Vordergrunddienst deckt die Navigation bei ausgeschaltetem Bildschirm ab und
+erspart die deutlich strengere Prüfung.
 
 ## Bekannte Grenzen
 

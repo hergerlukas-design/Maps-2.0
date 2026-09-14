@@ -1,0 +1,84 @@
+name: Android-App bauen
+
+# Von Hand ausgelöst, wie der Deploy. Ein Android-Build dauert ein paar
+# Minuten und wird nicht bei jedem Commit gebraucht.
+on:
+  workflow_dispatch:
+    inputs:
+      api_base:
+        description: >-
+          Adresse der API. In der nativen App läuft die Oberfläche unter
+          https://localhost, ein relatives /api ginge also ins Leere.
+        required: false
+        default: 'https://maps-2-0.fly.dev/api'
+
+jobs:
+  apk:
+    name: Debug-APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      # Capacitor 7 setzt JDK 21 voraus. Das Runner-Image bringt das Android
+      # SDK bereits mit, deshalb ist hier keine Installation nötig.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - run: npm ci
+
+      # Dieselben Prüfungen wie vor einem Deploy: Eine App, die man sich aufs
+      # Telefon lädt, ist schwerer zurückzunehmen als eine Website.
+      - name: Typprüfung
+        run: npx tsc -b --noEmit
+
+      - name: Tests
+        run: npm test
+
+      # Die VITE_-Werte werden zur Bauzeit in das Bundle eingebacken, das in
+      # der App mitgeliefert wird.
+      - name: Weboberfläche bauen
+        run: npm run build
+        env:
+          VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN_NATIVE || secrets.VITE_MAPBOX_TOKEN }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_GEOCODING_COUNTRIES: 'de,at,ch'
+          VITE_API_BASE: ${{ inputs.api_base }}
+
+      - name: In das Android-Projekt übertragen
+        run: npx cap sync android
+
+      - name: Bauen
+        run: ./gradlew --no-daemon assembleDebug
+        working-directory: android
+
+      # Ohne diesen Schritt wäre der Lauf zwar grün, aber niemand käme an die
+      # Datei heran.
+      - name: APK bereitstellen
+        uses: actions/upload-artifact@v4
+        with:
+          name: reichweite-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Zusammenfassung
+        run: |
+          {
+            echo "## Android-Build"
+            echo
+            echo "APK liegt als Artefakt **reichweite-debug-apk** bereit."
+            echo
+            echo "API-Adresse: \`${{ inputs.api_base }}\`"
+            echo
+            echo "Installieren: Artefakt herunterladen, entpacken, die \`.apk\`"
+            echo "auf dem Telefon öffnen und Installation aus unbekannter"
+            echo "Quelle für den Dateimanager erlauben."
+          } >> "$GITHUB_STEP_SUMMARY"

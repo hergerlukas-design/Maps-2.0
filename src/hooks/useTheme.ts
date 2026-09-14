@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { applyStatusBarTheme } from '@/platform/shell';
 
 export type ThemePreference = 'system' | 'light' | 'dark';
 export type ResolvedTheme = 'light' | 'dark';
@@ -52,6 +53,11 @@ export function useTheme(): {
     // Die Statusleiste des Browsers soll zur Fläche darunter passen.
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', resolved === 'dark' ? '#0b1120' : '#ffffff');
+
+    // In der Android-App gehört die Statusleiste dem System und richtet sich
+    // nicht nach `theme-color`; sonst stünde im hellen Thema weiße Schrift
+    // auf hellem Grund.
+    void applyStatusBarTheme(resolved);
   }, [resolved]);
 
   const setPreference = (value: ThemePreference) => {

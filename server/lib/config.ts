@@ -53,11 +53,25 @@ export const config = {
     subject: process.env.VAPID_SUBJECT ?? 'mailto:admin@example.com',
   },
 
-  /** Comma-separated list of allowed origins; empty means same-origin only. */
-  corsOrigins: (process.env.CORS_ORIGINS ?? '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean),
+  /**
+   * Comma-separated list of allowed origins; empty means same-origin only.
+   *
+   * `https://localhost` steht immer darin: Unter dieser Herkunft läuft die
+   * Oberfläche innerhalb der Android-App. Ohne den Eintrag scheitert dort
+   * jede API-Anfrage, und zwar mit einer Meldung, die auf alles Mögliche
+   * hindeutet, nur nicht auf CORS.
+   *
+   * Sicherheitlich ist das unbedenklich: Diese Herkunft kann nur senden, wer
+   * ohnehin auf dem Gerät läuft — eine fremde Website kann sie sich nicht
+   * ausstellen.
+   */
+  corsOrigins: [
+    'https://localhost',
+    ...(process.env.CORS_ORIGINS ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+  ],
 } as const;
 
 export const capabilities = {

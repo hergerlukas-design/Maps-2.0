@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { isNative } from '@/platform';
+
 /** Wie oft im Hintergrund nach einer neuen Fassung gesehen wird. */
 const CHECK_INTERVAL_MS = 30 * 60_000;
 
@@ -30,6 +32,13 @@ export function useAppUpdate(): AppUpdateState {
   const registrationRef = useRef<ServiceWorkerRegistration | null>(null);
 
   useEffect(() => {
+    /*
+     * In der nativen App liegen die Dateien im Installationspaket, nicht auf
+     * einem Server — ein Service Worker hätte dort nichts zu aktualisieren und
+     * würde nur eine zweite Zwischenspeicherung über die erste legen. Neue
+     * Fassungen kommen dort über den Play Store.
+     */
+    if (isNative) return;
     if (!('serviceWorker' in navigator) || !import.meta.env.PROD) return;
 
     let cancelled = false;

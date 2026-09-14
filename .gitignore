@@ -9,3 +9,8 @@ dist-server
 coverage
 *.tsbuildinfo
 .vite
+
+# Android: Signatur-Schlüssel und lokale SDK-Pfade
+*.jks
+*.keystore
+android/local.properties

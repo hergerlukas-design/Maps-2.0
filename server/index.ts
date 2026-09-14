@@ -12,7 +12,11 @@ app.set('trust proxy', true);
 
 app.use(express.json({ limit: '256kb' }));
 
-/** Only needed when the client is served from a different origin than the API. */
+/**
+ * Die Liste ist nie leer — `https://localhost` ist die Herkunft der Oberfläche
+ * innerhalb der Android-App. Für gleiche Herkunft ändert die Schicht nichts:
+ * Sie setzt die Kopfzeilen nur, wenn die Herkunft in der Liste steht.
+ */
 if (config.corsOrigins.length > 0) {
   app.use((req, res, next) => {
     const origin = req.headers.origin;

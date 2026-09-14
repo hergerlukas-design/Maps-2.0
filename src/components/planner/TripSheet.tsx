@@ -19,6 +19,8 @@ interface TripSheetProps {
   routing: boolean;
   routeError: string | null;
   proximity: LngLat | null;
+  /** Läuft die Ortung weiter, wenn die App nicht im Vordergrund ist? */
+  tracksInBackground: boolean;
   onOriginChange: (place: PlaceRef | null) => void;
   onRangeChange: (km: number) => void;
   onVehicleChange: (id: string) => void;
@@ -49,6 +51,7 @@ export function TripSheet(props: TripSheetProps) {
     routing,
     routeError,
     proximity,
+    tracksInBackground,
   } = props;
 
   const [expanded, setExpanded] = useState(false);
@@ -376,6 +379,18 @@ export function TripSheet(props: TripSheetProps) {
         className="shrink-0 border-t border-ink-700/70 px-4 pt-3"
         style={{ paddingBottom: 'calc(0.75rem + var(--safe-bottom))' }}
       >
+        {/*
+          Nur im Browser. Dort endet die Ortung, sobald der Bildschirm ausgeht
+          oder eine andere App nach vorn kommt — besser vor dem Losfahren
+          gesagt als mitten auf der Autobahn bemerkt.
+        */}
+        {route && !tracksInBackground && (
+          <p className="mb-2.5 text-xs text-ink-400">
+            Im Browser endet die Navigation, wenn der Bildschirm ausgeht oder du
+            die App wechselst. Die Android-App führt sie im Hintergrund weiter.
+          </p>
+        )}
+
         <button
           type="button"
           onClick={route ? props.onStart : props.onCalculate}

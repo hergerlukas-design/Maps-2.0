@@ -8,6 +8,7 @@ import { getSession, onAuthChange } from '@/services/supabase/auth';
 import { describeLocation } from '@/services/mapbox/geocoding';
 import { finishTrip, startTrip } from '@/services/supabase/repository';
 import { useGeolocation } from '@/hooks/useGeolocation';
+import { onHardwareBack } from '@/platform/shell';
 import { useWakeLock } from '@/hooks/useWakeLock';
 import { useVoice } from '@/hooks/useVoice';
 import { useNavigationSession } from '@/hooks/useNavigationSession';
@@ -226,6 +227,45 @@ export default function App() {
     }
   }, [geo, session, user, plan, vehicle]);
 
+  /*
+   * Die Zurück-Taste von Android.
+   *
+   * Wird sie nicht behandelt, beendet Android die App — mitten in einer Fahrt
+   * wäre das dasselbe Ärgernis wie das versehentliche Neuladen im Browser.
+   * Deshalb schließt sie der Reihe nach das, was offen ist, und während der
+   * Navigation verpufft sie folgenlos. Im Browser passiert hier nichts.
+   *
+   * Der Merker hält die jeweils aktuelle Entscheidung fest: Anmelden und
+   * Abmelden des Zuhörers laufen über die native Brücke und sollen nicht bei
+   * jeder Zustandsänderung erneut durchlaufen werden.
+   */
+  const backHandlerRef = useRef<() => boolean>(() => false);
+  backHandlerRef.current = () => {
+    if (session.picker.open) {
+      session.closePicker();
+      return true;
+    }
+    if (settingsOpen) {
+      setSettingsOpen(false);
+      return true;
+    }
+    if (accountOpen) {
+      setAccountOpen(false);
+      return true;
+    }
+    // Während der Fahrt bewusst folgenlos: Die Navigation wird über die
+    // Schaltfläche beendet, nicht aus Versehen.
+    if (session.phase === 'navigating') return true;
+    if (plan.destination) {
+      setPlan({ destination: null });
+      session.reset();
+      return true;
+    }
+    return false;
+  };
+
+  useEffect(() => onHardwareBack(() => backHandlerRef.current()), []);
+
   const endNavigation = useCallback(() => {
     geo.stop();
     voice.cancel();
@@ -336,6 +376,7 @@ export default function App() {
                 routing={session.phase === 'routing'}
                 routeError={session.routeError ?? locationError}
                 proximity={proximity}
+                tracksInBackground={geo.runsInBackground}
                 onOriginChange={(place) => {
                   setOriginOverride(place);
                   session.reset();
