@@ -8,7 +8,7 @@
 # Die Server-Keys (Tankerkönig, GoingElectric, VAPID) sind bewusst NICHT hier:
 # sie werden zur Laufzeit gesetzt und landen so nie im Image.
 # ---------------------------------------------------------------------------
-FROM node:22-slim AS build
+FROM node:24-slim AS build
 
 WORKDIR /app
 
@@ -39,7 +39,7 @@ RUN npm run build && npm run build:server
 # ---------------------------------------------------------------------------
 # Runtime
 # ---------------------------------------------------------------------------
-FROM node:22-slim AS runtime
+FROM node:24-slim AS runtime
 
 WORKDIR /app
 ENV NODE_ENV=production \
