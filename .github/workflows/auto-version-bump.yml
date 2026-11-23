@@ -1,107 +1,74 @@
 name: Auto Version Bump
 
+# Erhöht nach dem Merge eines claude/-PRs in den Standardzweig die Patch-Version.
+# Kein Branch-Filter, weil der Standardzweig nicht überall main/master heißt.
 on:
   pull_request:
     types: [closed]
-    branches: [main, master]
+
+# Bumps nacheinander ausführen, damit sich zwei Merges nicht gegenseitig überschreiben
+concurrency:
+  group: version-bump
+  cancel-in-progress: false
 
 jobs:
   version-bump:
-    if: github.event.pull_request.merged == true && contains(github.event.pull_request.head.ref, 'claude/')
+    if: >-
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'claude/') &&
+      github.event.pull_request.base.ref == github.event.repository.default_branch
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      pull-requests: read
+      pull-requests: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          ref: ${{ github.event.pull_request.base.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '24'
 
-      - name: Read current version
-        id: version
-        run: |
-          VERSION=$(jq -r '.version' package.json)
-          echo "current_version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Current version: $VERSION"
-
+      # Erhöht die Patch-Version in package.json und package-lock.json
       - name: Bump patch version
         id: bump
         run: |
-          CURRENT=${{ steps.version.outputs.current_version }}
-          # Parse version: major.minor.patch
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
-          PATCH=$((PATCH + 1))
-          NEW_VERSION="$MAJOR.$MINOR.$PATCH"
-          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
-          echo "New version: $NEW_VERSION"
+          OLD_VERSION=$(node -p "require('./package.json').version")
+          npm version patch --no-git-tag-version
+          NEW_VERSION=$(node -p "require('./package.json').version")
+          echo "old_version=$OLD_VERSION" >> "$GITHUB_OUTPUT"
+          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version: $OLD_VERSION → $NEW_VERSION"
 
-      - name: Update package.json
+      - name: Commit and push version bump
+        env:
+          OLD_VERSION: ${{ steps.bump.outputs.old_version }}
+          NEW_VERSION: ${{ steps.bump.outputs.new_version }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
-          jq '.version = "${{ steps.bump.outputs.new_version }}"' package.json > package.json.tmp
-          mv package.json.tmp package.json
-          echo "Updated package.json"
-
-      - name: Update src/constants/index.ts (if exists)
-        run: |
-          if [ -f "src/constants/index.ts" ]; then
-            sed -i "s/export const APP_VERSION = '[^']*'/export const APP_VERSION = '${{ steps.bump.outputs.new_version }}'/" src/constants/index.ts
-            echo "Updated src/constants/index.ts"
-          else
-            echo "src/constants/index.ts not found (optional)"
-          fi
-
-      - name: Commit version bump
-        run: |
-          git config --local user.email "claude@anthropic.com"
-          git config --local user.name "Claude"
-          git add package.json src/constants/index.ts 2>/dev/null || true
-          git commit -m "Automated version bump: ${{ steps.version.outputs.current_version }} → ${{ steps.bump.outputs.new_version }}
-
-After Claude Code fix in PR #${{ github.event.pull_request.number }}
-Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>" || echo "No changes to commit"
-
-      - name: Push version bump
-        run: |
-          git push origin HEAD:${{ github.event.pull_request.base.ref }}
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add package.json package-lock.json
+          git commit -m "chore: Version $OLD_VERSION → $NEW_VERSION" -m "Automatischer Version-Bump nach PR #$PR_NUMBER"
+          # Falls der Zweig inzwischen weitergelaufen ist, vor dem Push nachziehen
+          git pull --rebase origin "$BASE_REF"
+          git push origin "HEAD:$BASE_REF"
 
       - name: Comment on PR
         uses: actions/github-script@v7
+        env:
+          OLD_VERSION: ${{ steps.bump.outputs.old_version }}
+          NEW_VERSION: ${{ steps.bump.outputs.new_version }}
         with:
           script: |
-            github.rest.issues.createComment({
+            await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '✅ **Version Auto-Bump Complete**\n\n' +
-                    '- Old: `${{ steps.version.outputs.current_version }}`\n' +
-                    '- New: `${{ steps.bump.outputs.new_version }}`\n\n' +
-                    '📋 **Next Step:** Manual deploy approval required\n\n' +
-                    '⏭️ Trigger deploy with:\n' +
-                    '```\ngh workflow run deploy.yml --ref ${{ github.event.pull_request.base.ref }}\n```'
+              body: `✅ **Version erhöht:** \`${process.env.OLD_VERSION}\` → \`${process.env.NEW_VERSION}\``,
             })
-
-  manual-deploy-gate:
-    if: github.event.pull_request.merged == true && contains(github.event.pull_request.head.ref, 'claude/')
-    runs-on: ubuntu-latest
-    needs: version-bump
-    permissions:
-      contents: read
-
-    steps:
-      - name: 🚧 Waiting for manual deploy approval
-        run: |
-          echo "Version bump complete!"
-          echo ""
-          echo "⏸️  Manual Deploy Gate Activated"
-          echo "Deploy requires explicit approval via:"
-          echo "  1. GitHub Actions workflow_dispatch"
-          echo "  2. Or run: gh workflow run deploy.yml"
-          echo ""
-          echo "Repository owner will be notified of pending deployment."
