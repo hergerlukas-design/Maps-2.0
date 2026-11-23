@@ -67,7 +67,9 @@ jobs:
           name: reichweite-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
+          # APK ist bereits komprimiert
+          compression-level: 0
 
       - name: Zusammenfassung
         run: |
